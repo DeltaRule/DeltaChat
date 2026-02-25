@@ -80,10 +80,18 @@ io.on('connection', (socket) => {
 
 // ── Start ──────────────────────────────────────────────────────────────────
 
-server.listen(config.port, () => {
+server.listen(config.port, async () => {
   console.log(`✅  DeltaChat backend running on port ${config.port} (${config.nodeEnv})`);
   console.log(`   Health:  http://localhost:${config.port}/health`);
   console.log(`   API:     http://localhost:${config.port}/api`);
+
+  // Register JSON Schemas in DeltaDatabase for all collections
+  try {
+    const { getAdapter } = require('./db/DeltaDatabaseAdapter');
+    await getAdapter().initialize();
+  } catch (err) {
+    console.error('[Server] Failed to initialize DeltaDatabase schemas:', err.message);
+  }
 });
 
 // Graceful shutdown

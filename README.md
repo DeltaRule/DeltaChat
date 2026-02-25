@@ -143,7 +143,13 @@ It is a lightweight REST key-value service:
 PUT /entity/{database}   { key: doc, … }   # upsert entities
 GET /entity/{database}?key={k}             # fetch by key
 POST /api/login          { key: adminKey } # get Bearer token
+PUT /schema/{schemaID}   { … }             # register JSON Schema
 ```
+
+`DELTA_DB_URL` is **required** — the backend will refuse to start without it.
+
+On startup, the adapter automatically registers JSON Schemas for every collection
+via `PUT /schema/{schemaID}`, enabling DeltaDatabase to validate documents.
 
 Since DeltaDatabase has no native list/delete/query, the adapter (`backend/src/db/DeltaDatabaseAdapter.js`) maintains:
 
@@ -161,12 +167,6 @@ Since DeltaDatabase has no native list/delete/query, the adapter (`backend/src/d
 | `documents` | `documents:{id}` | `documents:_idx:knowledgeStoreId:{id}` |
 | `webhooks` | `webhooks:{id}` | — |
 | `settings` | `settings:global` | — |
-
-### Fallback mode (development)
-
-When `DELTA_DB_URL` is not set the adapter falls back to a JSON-file shim
-(`FileSystemFallback`) that stores data under `./data/`.  
-⚠ This is for **development only** — never use in production.
 
 ---
 

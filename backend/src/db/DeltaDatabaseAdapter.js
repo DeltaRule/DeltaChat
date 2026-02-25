@@ -10,7 +10,7 @@
  *     donti/deltadatabase:latest-aio
  *
  * Configure via environment variables:
- *   DELTA_DB_URL        Base URL of the DeltaDatabase instance  (default: http://127.0.0.1:8080)
+ *   DELTA_DB_URL        Base URL of the DeltaDatabase instance  (required)
  *   DELTA_DB_ADMIN_KEY  Admin key for authentication
  *   DELTA_DB_DATABASE   Database (namespace) name               (default: deltachat)
  *
@@ -28,19 +28,126 @@
  * Deletions are soft: the entity is marked { _deleted: true } and its ID is
  * pruned from every index it appeared in.
  *
- * ── Fallback ─────────────────────────────────────────────────────────────────
- * When DELTA_DB_URL is not set the adapter uses FileSystemFallback – a local
- * JSON-file shim for development without Docker.
- * ⚠  FileSystemFallback is NOT for production use.
+ * ── Schema registration ───────────────────────────────────────────────────────
+ * On startup, call adapter.initialize() to register JSON Schemas for every
+ * collection via PUT /schema/{schemaID}.  This enables DeltaDatabase to
+ * validate documents before they are stored.
+ *
+ * ── Required configuration ───────────────────────────────────────────────────
+ * DELTA_DB_URL must always be set.  The app will refuse to start without it.
  */
 
-const fs   = require('fs');
-const path = require('path');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../config');
 
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // refresh 5 min before expiry
+
+// ── JSON Schemas for DeltaDatabase collections ────────────────────────────────
+
+const SCHEMAS = {
+  chats: {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    $id: 'chats',
+    type: 'object',
+    properties: {
+      id:               { type: 'string' },
+      title:            { type: 'string' },
+      model:            { type: ['string', 'null'] },
+      systemPrompt:     { type: ['string', 'null'] },
+      knowledgeStoreIds:{ type: 'array', items: { type: 'string' } },
+      webhookId:        { type: ['string', 'null'] },
+      metadata:         { type: 'object' },
+      createdAt:        { type: 'string' },
+      updatedAt:        { type: 'string' },
+    },
+    required: ['id', 'title'],
+  },
+
+  messages: {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    $id: 'messages',
+    type: 'object',
+    properties: {
+      id:        { type: 'string' },
+      chatId:    { type: 'string' },
+      role:      { type: 'string', enum: ['user', 'assistant', 'system'] },
+      content:   { type: 'string' },
+      model:     { type: ['string', 'null'] },
+      usage:     { type: ['object', 'null'] },
+      createdAt: { type: 'string' },
+      updatedAt: { type: 'string' },
+    },
+    required: ['id', 'chatId', 'role', 'content'],
+  },
+
+  knowledge_stores: {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    $id: 'knowledge_stores',
+    type: 'object',
+    properties: {
+      id:             { type: 'string' },
+      name:           { type: 'string' },
+      description:    { type: 'string' },
+      embeddingModel: { type: ['string', 'null'] },
+      metadata:       { type: 'object' },
+      createdAt:      { type: 'string' },
+      updatedAt:      { type: 'string' },
+    },
+    required: ['id', 'name'],
+  },
+
+  documents: {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    $id: 'documents',
+    type: 'object',
+    properties: {
+      id:               { type: 'string' },
+      knowledgeStoreId: { type: 'string' },
+      filename:         { type: 'string' },
+      mimeType:         { type: 'string' },
+      size:             { type: 'number' },
+      chunkCount:       { type: 'number' },
+      status:           { type: 'string', enum: ['processing', 'indexed', 'error'] },
+      processorMeta:    { type: 'object' },
+      errorMessage:     { type: 'string' },
+      createdAt:        { type: 'string' },
+      updatedAt:        { type: 'string' },
+    },
+    required: ['id', 'knowledgeStoreId', 'filename'],
+  },
+
+  webhooks: {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    $id: 'webhooks',
+    type: 'object',
+    properties: {
+      id:        { type: 'string' },
+      name:      { type: 'string' },
+      url:       { type: 'string' },
+      events:    { type: 'array', items: { type: 'string' } },
+      chatIds:   { type: 'array', items: { type: 'string' } },
+      headers:   { type: 'object' },
+      secret:    { type: ['string', 'null'] },
+      enabled:   { type: 'boolean' },
+      createdAt: { type: 'string' },
+      updatedAt: { type: 'string' },
+    },
+    required: ['id', 'url'],
+  },
+
+  settings: {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    $id: 'settings',
+    type: 'object',
+    properties: {
+      id:        { type: 'string' },
+      createdAt: { type: 'string' },
+      updatedAt: { type: 'string' },
+    },
+    required: ['id'],
+  },
+};
 
 // ── DeltaDatabaseClient ───────────────────────────────────────────────────────
 
@@ -252,75 +359,65 @@ class DeltaDatabaseClient {
 
     return docs.slice(0, limit);
   }
-}
 
-// ── FileSystemFallback ────────────────────────────────────────────────────────
-
-/**
- * ⚠  DEVELOPMENT SHIM — do NOT use in production.
- * Mirrors the DeltaDatabaseClient interface using local JSON files.
- */
-class FileSystemFallback {
-  constructor(dataDir) {
-    this.dataDir = dataDir;
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  _filePath(collection) {
-    return path.join(this.dataDir, `${collection}.json`);
-  }
-
-  _read(collection) {
-    const fp = this._filePath(collection);
-    if (!fs.existsSync(fp)) return {};
-    try { return JSON.parse(fs.readFileSync(fp, 'utf8')); } catch { return {}; }
-  }
-
-  _write(collection, data) {
-    fs.writeFileSync(this._filePath(collection), JSON.stringify(data, null, 2));
-  }
-
-  async insert(collection, doc, _secondaryIndexFields = []) {
-    const store  = this._read(collection);
-    const now    = new Date().toISOString();
-    const id     = doc.id || uuidv4();
-    const entity = { ...doc, id, createdAt: doc.createdAt || now, updatedAt: now };
-    store[id] = entity;
-    this._write(collection, store);
-    return entity;
-  }
-
-  async findAll(collection) {
-    return Object.values(this._read(collection)).filter((d) => !d._deleted);
-  }
-
-  async findById(collection, id) {
-    const doc = this._read(collection)[id];
-    return doc && !doc._deleted ? doc : null;
-  }
-
-  async update(collection, id, fields) {
-    const store = this._read(collection);
-    if (!store[id] || store[id]._deleted) return null;
-    store[id] = { ...store[id], ...fields, id, updatedAt: new Date().toISOString() };
-    this._write(collection, store);
-    return store[id];
-  }
-
-  async delete(collection, id, _secondaryIndexes = []) {
-    const store = this._read(collection);
-    if (!store[id]) return { ok: false };
-    store[id] = { ...store[id], _deleted: true, updatedAt: new Date().toISOString() };
-    this._write(collection, store);
-    return { ok: true };
-  }
-
-  async query(collection, filter = {}, limit = 100) {
-    let docs = await this.findAll(collection);
-    for (const [k, v] of Object.entries(filter)) {
-      docs = docs.filter((d) => d[k] === v);
+  /**
+   * GET /schema/{schemaID}  – retrieve a stored schema (no auth required).
+   * Returns the schema object or null if not found.
+   */
+  async _getSchema(schemaId) {
+    try {
+      const { data } = await this._http.get(`/schema/${schemaId}`);
+      return data;
+    } catch (err) {
+      if (err.response && err.response.status === 404) return null;
+      throw err;
     }
-    return docs.slice(0, limit);
+  }
+
+  /**
+   * Ensure JSON Schemas are registered in DeltaDatabase for every collection.
+   *
+   * For each schema:
+   *   1. GET /schema/{schemaID}  — check whether it already exists.
+   *   2. If missing (404), PUT /schema/{schemaID}  — register it.
+   *   3. GET /schema/{schemaID}  — verify the stored schema matches expectation.
+   *
+   * Schema registration is best-effort: failures are logged but do not abort
+   * startup so the application can still serve requests.
+   */
+  async registerSchemas() {
+    const writeHeaders = await this._authHeader();
+
+    for (const [schemaId, schema] of Object.entries(SCHEMAS)) {
+      try {
+        // Step 1 – check current state
+        const existing = await this._getSchema(schemaId);
+
+        if (existing) {
+          console.log(`[DeltaDB] Schema already present: ${schemaId} ($id: ${existing.$id || '–'})`);
+        }
+
+        // Step 2 – always PUT so the latest schema definition is stored
+        await this._http.put(`/schema/${schemaId}`, schema, { headers: writeHeaders });
+
+        // Step 3 – verify
+        const stored = await this._getSchema(schemaId);
+        if (stored && stored.$id === schema.$id) {
+          console.log(`[DeltaDB] Schema ${existing ? 'updated' : 'registered'} ✓ ${schemaId}`);
+        } else {
+          console.warn(
+            `[DeltaDB] ⚠  Schema verification failed for "${schemaId}": ` +
+            `stored $id = ${stored ? stored.$id : 'null'}`
+          );
+        }
+      } catch (err) {
+        // Schema registration is best-effort: log but do not abort startup.
+        const status = err.response ? err.response.status : 'network error';
+        console.warn(
+          `[DeltaDB] ⚠  Could not register schema "${schemaId}" (${status}): ${err.message}`
+        );
+      }
+    }
   }
 }
 
@@ -328,32 +425,38 @@ class FileSystemFallback {
 
 class DeltaDatabaseAdapter {
   constructor() {
-    if (config.deltaDb.url) {
-      this._backend = new DeltaDatabaseClient(
-        config.deltaDb.url,
-        config.deltaDb.adminKey,
-        config.deltaDb.database
-      );
-      this._mode = 'deltadatabase';
-      console.log(
-        `[DeltaDB] Connected to DeltaDatabase at ${config.deltaDb.url}` +
-        ` (database: "${config.deltaDb.database}")`
-      );
-    } else {
-      this._backend = new FileSystemFallback(config.deltaDb.dataDir);
-      this._mode    = 'filesystem';
-      console.warn(
-        '[DeltaDB] ⚠  DELTA_DB_URL not set – using FileSystemFallback (dev shim).\n' +
-        '  Start DeltaDatabase:\n' +
+    if (!config.deltaDb.url) {
+      throw new Error(
+        '[DeltaDB] DELTA_DB_URL is required – DeltaDatabase must always be used.\n' +
+        '  Start DeltaDatabase with Docker:\n' +
         '    docker run -d -p 8080:8080 -e ADMIN_KEY=changeme -v delta_data:/shared/db \\\n' +
         '      donti/deltadatabase:latest-aio\n' +
         '  Then set DELTA_DB_URL=http://127.0.0.1:8080 and DELTA_DB_ADMIN_KEY=changeme'
       );
     }
+
+    this._backend = new DeltaDatabaseClient(
+      config.deltaDb.url,
+      config.deltaDb.adminKey,
+      config.deltaDb.database
+    );
+    this._mode = 'deltadatabase';
+    console.log(
+      `[DeltaDB] Connected to DeltaDatabase at ${config.deltaDb.url}` +
+      ` (database: "${config.deltaDb.database}")`
+    );
   }
 
-  /** "deltadatabase" | "filesystem" */
+  /** Always "deltadatabase" – the only supported backend. */
   get mode() { return this._mode; }
+
+  /**
+   * Register JSON Schemas for all collections.
+   * Call once at application startup after the adapter is created.
+   */
+  async initialize() {
+    await this._backend.registerSchemas();
+  }
 
   // ── Chats ───────────────────────────────────────────────────────────────────
 
@@ -451,4 +554,4 @@ function getAdapter() {
   return _instance;
 }
 
-module.exports = { DeltaDatabaseAdapter, DeltaDatabaseClient, FileSystemFallback, getAdapter };
+module.exports = { DeltaDatabaseAdapter, DeltaDatabaseClient, getAdapter };
