@@ -11,8 +11,15 @@
  *
  * Configure via environment variables:
  *   DELTA_DB_URL        Base URL of the DeltaDatabase instance  (required)
- *   DELTA_DB_ADMIN_KEY  Admin key for authentication
+ *   DELTA_DB_ADMIN_KEY  Admin key or API key — used directly as the Bearer token
+ *                       on every request (no login step, no token refresh).
  *   DELTA_DB_DATABASE   Database (namespace) name               (default: deltachat)
+ *
+ * ── Authentication ───────────────────────────────────────────────────────────
+ * Per the DeltaDatabase OpenAPI spec, server-to-server clients must supply an
+ * admin key or API key directly as the Bearer value on every request.
+ * POST /api/login is for the built-in browser UI only; session tokens are
+ * short-lived, cannot be refreshed, and must NOT be used by backend services.
  *
  * ── Storage design ───────────────────────────────────────────────────────────
  * DeltaDatabase stores entities as key → JSON document pairs inside a named
@@ -41,7 +48,7 @@ const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../config');
 
-const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // refresh 5 min before expiry
+const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // kept for backwards-compat; unused
 
 // ── JSON Schemas for DeltaDatabase collections ────────────────────────────────
 
@@ -156,52 +163,40 @@ class DeltaDatabaseClient {
     this.baseUrl  = baseUrl.replace(/\/$/, '');
     this.adminKey = adminKey || null;
     this.database = database || 'deltachat';
-    this._token       = null;
-    this._tokenExpiry = null;
     this._http = axios.create({ baseURL: this.baseUrl, timeout: 15000 });
   }
 
   // ── Auth ────────────────────────────────────────────────────────────────────
 
-  async _ensureToken() {
-    const needsRefresh =
-      !this._token ||
-      (this._tokenExpiry && Date.now() > this._tokenExpiry - TOKEN_REFRESH_MARGIN_MS);
-
-    if (needsRefresh) {
-      const body = this.adminKey ? { key: this.adminKey } : { client_id: 'deltachat' };
-      const { data } = await this._http.post('/api/login', body);
-      this._token       = data.token;
-      this._tokenExpiry = data.expires_at ? new Date(data.expires_at).getTime() : null;
+  /**
+   * Returns an Authorization header using the admin/API key directly as the
+   * Bearer token, per the DeltaDatabase OpenAPI spec:
+   *   "For all server-to-server and script usage, supply an admin key or API key
+   *    directly as the Bearer value on every request.  No login step is needed
+   *    and no token ever needs to be refreshed."
+   *
+   * POST /api/login and session tokens are for the built-in browser UI only.
+   */
+  _authHeader() {
+    if (!this.adminKey) {
+      throw new Error(
+        '[DeltaDB] DELTA_DB_ADMIN_KEY is required for server-to-server authentication'
+      );
     }
-    return this._token;
-  }
-
-  async _authHeader() {
-    return { Authorization: `Bearer ${await this._ensureToken()}` };
+    return { Authorization: `Bearer ${this.adminKey}` };
   }
 
   // ── DeltaDatabase REST helpers ────────────────────────────────────────────────
 
   /** PUT /entity/{db}  { key: doc, … }  – upsert one or more entities. */
   async _put(entities) {
-    const headers = await this._authHeader();
-    try {
-      await this._http.put(`/entity/${this.database}`, entities, { headers });
-    } catch (err) {
-      if (err.response && err.response.status === 401) {
-        this._token = null;
-        const h = await this._authHeader();
-        await this._http.put(`/entity/${this.database}`, entities, { headers: h });
-      } else {
-        throw err;
-      }
-    }
+    const headers = this._authHeader();
+    await this._http.put(`/entity/${this.database}`, entities, { headers });
   }
 
   /** GET /entity/{db}?key={k}  – fetch one entity; returns null on 404. */
   async _get(key) {
-    const headers = await this._authHeader();
+    const headers = this._authHeader();
     try {
       const { data } = await this._http.get(`/entity/${this.database}`, {
         params: { key },
@@ -210,15 +205,21 @@ class DeltaDatabaseClient {
       return data;
     } catch (err) {
       if (err.response && err.response.status === 404) return null;
-      if (err.response && err.response.status === 401) {
-        this._token = null;
-        const h = await this._authHeader();
-        const { data } = await this._http.get(`/entity/${this.database}`, {
-          params: { key },
-          headers: h,
-        });
-        return data;
-      }
+      throw err;
+    }
+  }
+
+  /** DELETE /entity/{db}?key={k}  – permanently delete one entity. */
+  async _deleteEntity(key) {
+    const headers = this._authHeader();
+    try {
+      await this._http.delete(`/entity/${this.database}`, {
+        params: { key },
+        headers,
+      });
+    } catch (err) {
+      // 404 means already gone – treat as success
+      if (err.response && err.response.status === 404) return;
       throw err;
     }
   }
@@ -318,18 +319,17 @@ class DeltaDatabaseClient {
     const existing = await this.findById(collection, id);
     if (!existing) return { ok: false };
 
-    await this._put({
-      [`${collection}:${id}`]: {
-        ...existing,
-        _deleted: true,
-        updatedAt: new Date().toISOString(),
-      },
-    });
+    // Remove from master index
     await this._removeFromIndex(collection, id);
 
+    // Remove from all secondary indexes
     for (const { field, value } of secondaryIndexes) {
       await this._removeFromSecondaryIndex(collection, field, value, id);
     }
+
+    // Hard-delete the entity via DELETE /entity/{db}?key=
+    await this._deleteEntity(`${collection}:${id}`);
+
     return { ok: true };
   }
 
@@ -386,7 +386,7 @@ class DeltaDatabaseClient {
    * startup so the application can still serve requests.
    */
   async registerSchemas() {
-    const writeHeaders = await this._authHeader();
+    const writeHeaders = this._authHeader();
 
     for (const [schemaId, schema] of Object.entries(SCHEMAS)) {
       try {

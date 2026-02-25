@@ -7,15 +7,17 @@ was mitigated (or not) in this codebase.
 
 ---
 
-## 1. No native "list all" or "delete" operations
+## 1. No native "list all" operation
 
 **Symptom**  
-There is no endpoint to retrieve all documents in a collection or to remove a
-document by key.
+There is no endpoint to retrieve all documents in a collection or to perform a
+range/scan query.  There IS a native `DELETE /entity/{database}?key={k}` endpoint.
 
 **Root cause**  
-DeltaDatabase is a pure key→value store.  The only read endpoint is
+DeltaDatabase is a key→value store.  The only read endpoint is
 `GET /entity/{db}?key={k}` (single key lookup); there is no scan or range query.
+Delete was added to the REST API (`DELETE /entity/{database}?key=`) but is not
+advertised prominently in older documentation.
 
 **Mitigation**  
 The adapter maintains explicit index documents alongside the data:
@@ -25,7 +27,8 @@ The adapter maintains explicit index documents alongside the data:
 | `{col}:_index` | Ordered list of all active entity IDs in a collection |
 | `{col}:_idx:{field}:{value}` | Secondary index: IDs where `doc[field] === value` |
 
-Every `insert` updates both indexes; every `delete` prunes them.
+Every `insert` updates both indexes; every `delete` prunes them and then calls
+the native `DELETE /entity/` endpoint.
 This adds **2–3 extra round-trips** per write and requires careful ordering to
 avoid leaving stale index entries on partial failures (see item 2).
 
@@ -73,47 +76,57 @@ Document explicitly that schema registration requires an admin-key-derived token
 
 ---
 
-## 4. Login body format inconsistency
+## 4. Login API is browser-UI only — server-to-server must use keys directly
 
 **Symptom**  
-The DeltaDatabase example application (Flask) uses `{ client_id: "chat-app" }`
-for login, while the admin key flow uses `{ key: adminKey }`.  The two formats
-target different authentication paths but share the same endpoint.
+The original adapter implementation called `POST /api/login` with either
+`{ key: adminKey }` or `{ client_id: 'deltachat' }` on every connection and
+cached the resulting session token, refreshing it before expiry.  This is the
+wrong authentication pattern for server-to-server use and introduces unnecessary
+complexity and failure modes.
 
 **Root cause**  
-The `/api/login` endpoint appears to accept two mutually exclusive body schemas
-with no discriminator field other than which key is present.
+The DeltaDatabase OpenAPI specification (`api/openapi.yaml`) explicitly states:
+
+> "For all server-to-server and script usage, supply an admin key or API key
+>  directly as the Bearer value on every request.  No login step is needed and
+>  no token ever needs to be refreshed.  Session tokens exist only so the
+>  built-in web UI can avoid storing a raw key in browser storage."
+
+The `client_id` login form is documented as "dev-mode only, when no `-admin-key`
+is configured" — it is not a general non-admin authentication flow.
 
 **Mitigation**  
-The adapter checks whether `DELTA_DB_ADMIN_KEY` is set:
-- If set → `POST /api/login { key: adminKey }`
-- If not set → `POST /api/login { client_id: "deltachat" }`
+The adapter was updated to use the admin key directly as the Bearer token on
+every request (`_authHeader()` is now synchronous; `_ensureToken`, token caching,
+and the login call were all removed).  A 401 response now means the key is wrong
+and throws immediately — no retry.
 
 **Recommendation**  
-DeltaDatabase should document both login modes with explicit examples and
-describe what permissions each grants.
+None — the current implementation is correct per the spec.
 
 ---
 
-## 5. Token expiry field name is unverified
+## 5. Token expiry and refresh were unnecessary *(resolved)*
 
 **Symptom**  
-The adapter reads `data.expires_at` from the login response to pre-emptively
-refresh the token before it expires.  If DeltaDatabase uses a different field
-name (e.g. `expiresAt`, `exp`, or omits it entirely), the expiry tracking is
-silently broken and `_tokenExpiry` stays `null`, falling back to infinite reuse
-until a 401 occurs.
+The original adapter tracked `_token` and `_tokenExpiry` and attempted to
+pre-emptively refresh the token 5 minutes before expiry.  The expiry field name
+(`expires_at`) was guessed from the OpenAPI spec's `LoginResponse` schema and
+was fragile.
 
 **Root cause**  
-The DeltaDatabase API response for `POST /api/login` is not fully documented.
+The login-based auth approach was unnecessary (see item 4).  Session tokens are
+short-lived (24 h), cannot be refreshed by calling `/api/login` again, and are
+not meant for server-side use at all.
 
 **Mitigation**  
-The adapter handles `null` expiry gracefully; a 401 on any request triggers a
-single token refresh and retry, so functionality is never blocked.
+All token management code (`_ensureToken`, `_token`, `_tokenExpiry`,
+`TOKEN_REFRESH_MARGIN_MS`) was removed.  The adapter now uses the admin key
+directly as an eternal Bearer token.
 
 **Recommendation**  
-Document the exact JSON response shape for `POST /api/login`, including the
-token expiry field name and format.
+None — resolved.
 
 ---
 
