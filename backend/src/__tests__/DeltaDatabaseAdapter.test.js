@@ -74,8 +74,8 @@ describe('SCHEMAS constant', () => {
     const client = makeClient();
     const capturedBodies = {};
 
-    http.get.mockRejectedValue(axiosError(404));
-    http.put.mockImplementation((url, body) => {
+    client._http.get.mockRejectedValue(axiosError(404));
+    client._http.put.mockImplementation((url, body) => {
       capturedBodies[url] = body;
       return Promise.resolve({ data: {} });
     });
@@ -154,7 +154,7 @@ describe('DeltaDatabaseClient – _get', () => {
     client._http.get.mockResolvedValue({ data: doc });
 
     const result = await client._get('chats:1');
-    expect(result).toEqual({ id: '1' });
+    expect(result).toEqual({ id: '1', title: 'hi' });
     expect(client._http.get).toHaveBeenCalledWith(
       '/entity/testdb',
       expect.objectContaining({
@@ -168,7 +168,7 @@ describe('DeltaDatabaseClient – _get', () => {
     const client = makeClient();
     client._http.get.mockResolvedValue({ data: {} });
     await client._get('chats:1');
-    expect(client._http.get.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer adminkey' });
+    expect(client._http.get.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer test-api-key' });
   });
 
   test('returns null on 404', async () => {
@@ -374,8 +374,8 @@ describe('DeltaDatabaseClient – registerSchemas', () => {
     const client = makeClient();
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
-    http.get.mockResolvedValue({ data: { $id: 'chats' } });
-    http.put.mockResolvedValue({ data: {} });
+    client._http.get.mockResolvedValue({ data: { $id: 'chats' } });
+    client._http.put.mockResolvedValue({ data: {} });
 
     await client.registerSchemas();
 
@@ -407,8 +407,8 @@ describe('DeltaDatabaseClient – registerSchemas', () => {
     const client = makeClient();
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-    http.get.mockRejectedValue(axiosError(404));
-    http.put.mockRejectedValue(axiosError(403, 'forbidden'));
+    client._http.get.mockRejectedValue(axiosError(404));
+    client._http.put.mockRejectedValue(axiosError(403, 'forbidden'));
 
     await expect(client.registerSchemas()).resolves.not.toThrow();
     expect(warnSpy.mock.calls.length).toBeGreaterThanOrEqual(6);
