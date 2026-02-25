@@ -20,7 +20,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      ADMIN_KEY: "${DELTA_DB_ADMIN_KEY:-changeme}"
+      ADMIN_KEY: "${DELTA_DB_API_KEY:-${DELTA_DB_ADMIN_KEY:-changeme}}"
     volumes:
       - delta_data:/shared/db
     healthcheck:
@@ -62,7 +62,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       DELTA_DB_URL: "http://deltadatabase:8080"
-      DELTA_DB_ADMIN_KEY: "${DELTA_DB_ADMIN_KEY:-changeme}"
+      DELTA_DB_API_KEY: "${DELTA_DB_API_KEY:-${DELTA_DB_ADMIN_KEY:-changeme}}"
       DELTA_DB_DATABASE: "${DELTA_DB_DATABASE:-deltachat}"
       CHROMA_URL: "http://chroma:8000"
       TIKA_URL: "http://tika:9998"

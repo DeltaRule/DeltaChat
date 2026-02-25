@@ -7,6 +7,10 @@
  * a plain jest-mock object.  This avoids any axios.create hoisting complexity
  * while still exercising every code path.
  *
+ * Auth model (per OpenAPI spec): admin keys and API keys (dk_…) are used
+ * directly as Bearer tokens on every request.  No POST /api/login is ever
+ * called for server-to-server use.
+ *
  * DeltaDatabaseAdapter reads config at require-time, so we use
  * jest.resetModules() + fresh require() for tests that need a different URL.
  */
@@ -16,9 +20,10 @@
 /** Build a fresh mock HTTP client (axios-instance shape). */
 function makeMockHttp() {
   return {
-    get:  jest.fn(),
-    put:  jest.fn(),
-    post: jest.fn(),
+    get:    jest.fn(),
+    put:    jest.fn(),
+    post:   jest.fn(), // kept for completeness; never called for auth
+    delete: jest.fn(),
   };
 }
 
@@ -31,9 +36,8 @@ function axiosError(status, message = 'error') {
 
 /** Build a DeltaDatabaseClient with injected mock HTTP transport. */
 function makeClient(database = 'testdb') {
-  // We require inside the helper so jest.resetModules() is respected.
   const { DeltaDatabaseClient } = require('../db/DeltaDatabaseAdapter');
-  const client = new DeltaDatabaseClient('http://localhost:8080', 'adminkey', database);
+  const client = new DeltaDatabaseClient('http://localhost:8080', 'test-api-key', database);
   client._http = makeMockHttp();
   return client;
 }
@@ -41,10 +45,6 @@ function makeClient(database = 'testdb') {
 // ── SCHEMAS constant ──────────────────────────────────────────────────────────
 
 describe('SCHEMAS constant', () => {
-  // We need access to the private SCHEMAS object; we'll verify them through
-  // registerSchemas() behaviour rather than importing SCHEMAS directly.
-  // But we can verify the correct number of schema keys are registered.
-
   const EXPECTED_SCHEMA_IDS = [
     'chats',
     'messages',
@@ -58,8 +58,6 @@ describe('SCHEMAS constant', () => {
     const client = makeClient();
     const http = client._http;
 
-    // POST /api/login
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
     // GET /schema/{id} → 404 (not yet registered)
     http.get.mockRejectedValue(axiosError(404));
     // PUT /schema/{id} → 200
@@ -67,11 +65,13 @@ describe('SCHEMAS constant', () => {
 
     await client.registerSchemas();
 
-    const putCalls = http.put.mock.calls.map((c) => c[0]); // URLs
+    const putCalls = http.put.mock.calls.map((c) => c[0]);
     for (const id of EXPECTED_SCHEMA_IDS) {
       expect(putCalls).toContain(`/schema/${id}`);
     }
     expect(putCalls).toHaveLength(EXPECTED_SCHEMA_IDS.length);
+    // No login endpoint is ever called
+    expect(http.post).not.toHaveBeenCalled();
   });
 
   test('each schema has the correct $id and required fields', async () => {
@@ -79,7 +79,6 @@ describe('SCHEMAS constant', () => {
     const http = client._http;
     const capturedBodies = {};
 
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
     http.get.mockRejectedValue(axiosError(404));
     http.put.mockImplementation((url, body) => {
       capturedBodies[url] = body;
@@ -110,56 +109,47 @@ describe('SCHEMAS constant', () => {
 
 // ── DeltaDatabaseClient – authentication ──────────────────────────────────────
 
-describe('DeltaDatabaseClient – auth', () => {
-  test('_ensureToken posts adminKey in { key } when adminKey is set', async () => {
-    const client = makeClient();
-    client._http.post.mockResolvedValue({ data: { token: 'mytoken' } });
+describe('DeltaDatabaseClient – _authHeader', () => {
+  test('returns correct Authorization: Bearer header with the API key', () => {
+    const { DeltaDatabaseClient } = require('../db/DeltaDatabaseAdapter');
+    const client = new DeltaDatabaseClient('http://localhost:8080', 'my-secret-key', 'db');
 
-    const token = await client._ensureToken();
+    const header = client._authHeader();
 
-    expect(token).toBe('mytoken');
-    expect(client._http.post).toHaveBeenCalledWith(
-      '/api/login',
-      { key: 'adminkey' }
-    );
+    expect(header).toEqual({ Authorization: 'Bearer my-secret-key' });
   });
 
-  test('_ensureToken posts { client_id } when adminKey is absent', async () => {
+  test('uses empty string when no API key is provided', () => {
     const { DeltaDatabaseClient } = require('../db/DeltaDatabaseAdapter');
     const client = new DeltaDatabaseClient('http://localhost:8080', null, 'db');
-    client._http = makeMockHttp();
-    client._http.post.mockResolvedValue({ data: { token: 'tok2' } });
 
-    await client._ensureToken();
+    const header = client._authHeader();
 
-    expect(client._http.post).toHaveBeenCalledWith(
-      '/api/login',
-      { client_id: 'deltachat' }
-    );
+    expect(header).toEqual({ Authorization: 'Bearer null' });
   });
 
-  test('_ensureToken caches the token and does not re-login', async () => {
-    const client = makeClient();
-    client._http.post.mockResolvedValue({ data: { token: 'cached' } });
+  test('is synchronous – returns a plain object, not a Promise', () => {
+    const { DeltaDatabaseClient } = require('../db/DeltaDatabaseAdapter');
+    const client = new DeltaDatabaseClient('http://localhost:8080', 'key', 'db');
 
-    await client._ensureToken();
-    await client._ensureToken();
+    const result = client._authHeader();
 
-    expect(client._http.post).toHaveBeenCalledTimes(1);
+    expect(result).not.toBeInstanceOf(Promise);
+    expect(typeof result).toBe('object');
   });
 
-  test('_ensureToken refreshes when token is expired', async () => {
+  test('never calls POST /api/login for any request', async () => {
     const client = makeClient();
-    client._http.post.mockResolvedValue({ data: { token: 'refreshed' } });
+    client._http.get.mockResolvedValue({ data: { id: '1' } });
+    client._http.put.mockResolvedValue({ data: {} });
+    client._http.delete.mockResolvedValue({ data: { status: 'ok' } });
 
-    // Pre-set an already-expired token
-    client._token = 'old';
-    client._tokenExpiry = Date.now() - 1000; // expired 1 s ago
+    // Exercise all HTTP-method helpers
+    await client._get('chats:1');
+    await client._put({ 'chats:1': { id: '1' } });
+    await client._deleteEntity('chats:1');
 
-    const token = await client._ensureToken();
-
-    expect(token).toBe('refreshed');
-    expect(client._http.post).toHaveBeenCalledTimes(1);
+    expect(client._http.post).not.toHaveBeenCalled();
   });
 });
 
@@ -169,7 +159,6 @@ describe('DeltaDatabaseClient – _get', () => {
   test('returns parsed data on 200', async () => {
     const client = makeClient();
     const doc = { id: '1', title: 'hi' };
-    client._http.post.mockResolvedValue({ data: { token: 'tok' } });
     client._http.get.mockResolvedValue({ data: doc });
 
     const result = await client._get('chats:1');
@@ -177,13 +166,15 @@ describe('DeltaDatabaseClient – _get', () => {
     expect(result).toEqual(doc);
     expect(client._http.get).toHaveBeenCalledWith(
       '/entity/testdb',
-      expect.objectContaining({ params: { key: 'chats:1' } })
+      expect.objectContaining({
+        params:  { key: 'chats:1' },
+        headers: { Authorization: 'Bearer test-api-key' },
+      })
     );
   });
 
   test('returns null on 404', async () => {
     const client = makeClient();
-    client._http.post.mockResolvedValue({ data: { token: 'tok' } });
     client._http.get.mockRejectedValue(axiosError(404));
 
     const result = await client._get('chats:missing');
@@ -191,25 +182,15 @@ describe('DeltaDatabaseClient – _get', () => {
     expect(result).toBeNull();
   });
 
-  test('retries once after 401 and returns data', async () => {
+  test('throws on non-404 errors (401 means invalid key, not expired token)', async () => {
     const client = makeClient();
-    client._http.post.mockResolvedValue({ data: { token: 'newtoken' } });
-    client._http.get
-      .mockRejectedValueOnce(axiosError(401))
-      .mockResolvedValueOnce({ data: { id: 'retried' } });
+    client._http.get.mockRejectedValue(axiosError(401));
 
-    const result = await client._get('chats:1');
-
-    expect(result).toEqual({ id: 'retried' });
-    // Token must have been refreshed (login called again after 401)
-    expect(client._http.post).toHaveBeenCalledTimes(2);
-    // After retry the token is the freshly obtained value, not null
-    expect(client._token).toBe('newtoken');
+    await expect(client._get('chats:1')).rejects.toMatchObject({ response: { status: 401 } });
   });
 
-  test('throws on non-401/404 errors', async () => {
+  test('throws on 500 errors', async () => {
     const client = makeClient();
-    client._http.post.mockResolvedValue({ data: { token: 'tok' } });
     client._http.get.mockRejectedValue(axiosError(500));
 
     await expect(client._get('chats:bad')).rejects.toMatchObject({ response: { status: 500 } });
@@ -219,9 +200,8 @@ describe('DeltaDatabaseClient – _get', () => {
 // ── DeltaDatabaseClient – _put ────────────────────────────────────────────────
 
 describe('DeltaDatabaseClient – _put', () => {
-  test('sends PUT /entity/{db} with entity payload', async () => {
+  test('sends PUT /entity/{db} with entity payload and auth header', async () => {
     const client = makeClient();
-    client._http.post.mockResolvedValue({ data: { token: 'tok' } });
     client._http.put.mockResolvedValue({ data: {} });
 
     await client._put({ 'chats:1': { id: '1' } });
@@ -229,19 +209,42 @@ describe('DeltaDatabaseClient – _put', () => {
     expect(client._http.put).toHaveBeenCalledWith(
       '/entity/testdb',
       { 'chats:1': { id: '1' } },
-      expect.any(Object)
+      { headers: { Authorization: 'Bearer test-api-key' } }
     );
   });
 
-  test('retries once after 401', async () => {
+  test('throws on error without retrying', async () => {
     const client = makeClient();
-    client._http.post.mockResolvedValue({ data: { token: 'tok' } });
-    client._http.put
-      .mockRejectedValueOnce(axiosError(401))
-      .mockResolvedValueOnce({ data: {} });
+    client._http.put.mockRejectedValue(axiosError(403, 'forbidden'));
 
-    await expect(client._put({ 'k': {} })).resolves.not.toThrow();
-    expect(client._http.put).toHaveBeenCalledTimes(2);
+    await expect(client._put({ 'k': {} })).rejects.toMatchObject({ response: { status: 403 } });
+    expect(client._http.put).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── DeltaDatabaseClient – _deleteEntity ──────────────────────────────────────
+
+describe('DeltaDatabaseClient – _deleteEntity', () => {
+  test('sends DELETE /entity/{db}?key={k} with auth header', async () => {
+    const client = makeClient();
+    client._http.delete.mockResolvedValue({ data: { status: 'ok' } });
+
+    await client._deleteEntity('chats:abc');
+
+    expect(client._http.delete).toHaveBeenCalledWith(
+      '/entity/testdb',
+      {
+        params:  { key: 'chats:abc' },
+        headers: { Authorization: 'Bearer test-api-key' },
+      }
+    );
+  });
+
+  test('throws on error', async () => {
+    const client = makeClient();
+    client._http.delete.mockRejectedValue(axiosError(403));
+
+    await expect(client._deleteEntity('chats:x')).rejects.toMatchObject({ response: { status: 403 } });
   });
 });
 
@@ -277,7 +280,7 @@ describe('DeltaDatabaseClient – _getSchema', () => {
     });
   });
 
-  test('does NOT send an Authorization header (no auth required)', async () => {
+  test('does NOT send an Authorization header (no auth required per spec)', async () => {
     const client = makeClient();
     client._http.get.mockResolvedValue({ data: { $id: 'chats' } });
 
@@ -285,19 +288,62 @@ describe('DeltaDatabaseClient – _getSchema', () => {
 
     // GET /schema/{id} should be called with just the URL, no headers/params
     expect(client._http.get).toHaveBeenCalledWith('/schema/chats');
-    // _ensureToken / post /api/login should NOT have been called
     expect(client._http.post).not.toHaveBeenCalled();
+  });
+});
+
+// ── DeltaDatabaseClient – listSchemas ────────────────────────────────────────
+
+describe('DeltaDatabaseClient – listSchemas', () => {
+  test('calls GET /admin/schemas and returns the array', async () => {
+    const client = makeClient();
+    client._http.get.mockResolvedValue({ data: ['chats', 'messages', 'settings'] });
+
+    const result = await client.listSchemas();
+
+    expect(result).toEqual(['chats', 'messages', 'settings']);
+    expect(client._http.get).toHaveBeenCalledWith('/admin/schemas');
+  });
+
+  test('does not require an auth header (no auth per spec)', async () => {
+    const client = makeClient();
+    client._http.get.mockResolvedValue({ data: [] });
+
+    await client.listSchemas();
+
+    expect(client._http.get).toHaveBeenCalledWith('/admin/schemas');
+    expect(client._http.post).not.toHaveBeenCalled();
+  });
+
+  test('returns empty array when server returns non-array', async () => {
+    const client = makeClient();
+    client._http.get.mockResolvedValue({ data: null });
+
+    const result = await client.listSchemas();
+
+    expect(result).toEqual([]);
+  });
+
+  test('returns empty array and logs warning when request fails', async () => {
+    const client = makeClient();
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    client._http.get.mockRejectedValue(axiosError(500));
+
+    const result = await client.listSchemas();
+
+    expect(result).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Could not list schemas'));
+    warnSpy.mockRestore();
   });
 });
 
 // ── DeltaDatabaseClient – registerSchemas ─────────────────────────────────────
 
 describe('DeltaDatabaseClient – registerSchemas', () => {
-  test('performs GET → PUT → GET sequence for each schema', async () => {
+  test('performs GET → PUT → GET sequence for each schema without calling login', async () => {
     const client = makeClient();
     const http = client._http;
 
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
     // GET /schema/{id} → schema not present yet
     http.get.mockRejectedValue(axiosError(404));
     http.put.mockResolvedValue({ data: {} });
@@ -305,13 +351,28 @@ describe('DeltaDatabaseClient – registerSchemas', () => {
     await client.registerSchemas();
 
     // 6 schemas × (1 GET-check + 1 GET-verify) = 12 GET calls
-    // (The second GET after PUT also returns 404 in this mock, which triggers the
-    // "verification failed" log path — still no throw.)
     expect(http.get.mock.calls.every((c) => c[0].startsWith('/schema/'))).toBe(true);
     expect(http.get).toHaveBeenCalledTimes(12); // 2 per schema × 6
-
     // 1 PUT per schema = 6
     expect(http.put).toHaveBeenCalledTimes(6);
+    // No login
+    expect(http.post).not.toHaveBeenCalled();
+  });
+
+  test('PUT /schema is called with the API key Bearer header', async () => {
+    const client = makeClient();
+    const http = client._http;
+
+    http.get.mockRejectedValue(axiosError(404));
+    http.put.mockResolvedValue({ data: {} });
+
+    await client.registerSchemas();
+
+    const schemaPutCalls = http.put.mock.calls.filter((c) => c[0].startsWith('/schema/'));
+    expect(schemaPutCalls.length).toBe(6);
+    for (const call of schemaPutCalls) {
+      expect(call[2]).toEqual({ headers: { Authorization: 'Bearer test-api-key' } });
+    }
   });
 
   test('logs "already present" when schema exists before PUT', async () => {
@@ -319,8 +380,6 @@ describe('DeltaDatabaseClient – registerSchemas', () => {
     const http = client._http;
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-    // First GET → schema exists; second GET after PUT → schema exists
     http.get.mockResolvedValue({ data: { $id: 'chats' } });
     http.put.mockResolvedValue({ data: {} });
 
@@ -328,7 +387,6 @@ describe('DeltaDatabaseClient – registerSchemas', () => {
 
     const logMessages = consoleSpy.mock.calls.map((c) => c[0]);
     expect(logMessages.some((m) => m.includes('already present'))).toBe(true);
-
     consoleSpy.mockRestore();
   });
 
@@ -337,13 +395,10 @@ describe('DeltaDatabaseClient – registerSchemas', () => {
     const http = client._http;
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-    // First GET per schema → 404; PUT → ok; second GET → confirmed
     let callCount = 0;
     http.get.mockImplementation((url) => {
       if (!url.startsWith('/schema/')) return Promise.reject(axiosError(404));
       callCount++;
-      // Odd calls = first-check (404), even calls = verify (200 with schema)
       if (callCount % 2 === 1) return Promise.reject(axiosError(404));
       const schemaId = url.replace('/schema/', '');
       return Promise.resolve({ data: { $id: schemaId } });
@@ -354,7 +409,6 @@ describe('DeltaDatabaseClient – registerSchemas', () => {
 
     const logMessages = consoleSpy.mock.calls.map((c) => c[0]);
     expect(logMessages.some((m) => m.includes('registered') && m.includes('✓'))).toBe(true);
-
     consoleSpy.mockRestore();
   });
 
@@ -363,16 +417,13 @@ describe('DeltaDatabaseClient – registerSchemas', () => {
     const http = client._http;
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
     http.get.mockRejectedValue(axiosError(404));
-    // All PUTs fail
     http.put.mockRejectedValue(axiosError(403, 'forbidden'));
 
     await expect(client.registerSchemas()).resolves.not.toThrow();
 
     expect(warnSpy.mock.calls.length).toBeGreaterThanOrEqual(6);
     expect(warnSpy.mock.calls[0][0]).toContain('Could not register schema');
-
     warnSpy.mockRestore();
   });
 });
@@ -383,15 +434,8 @@ describe('DeltaDatabaseClient – insert', () => {
   test('generates an id and timestamps, stores entity, updates master index', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-
-    // Index read (GET chats:_index) → empty; then entity GET for findById → entity
-    let putPayload;
-    http.get.mockResolvedValue({ data: { keys: [] } }); // _readIndex returns empty
-    http.put.mockImplementation((url, body) => {
-      putPayload = body;
-      return Promise.resolve({ data: {} });
-    });
+    http.get.mockImplementation(() => Promise.resolve({ data: { keys: [] } }));
+    http.put.mockResolvedValue({ data: {} });
 
     const doc = await client.insert('chats', { title: 'Hello' });
 
@@ -399,7 +443,6 @@ describe('DeltaDatabaseClient – insert', () => {
     expect(doc.title).toBe('Hello');
     expect(doc.createdAt).toBeDefined();
     expect(doc.updatedAt).toBeDefined();
-    // The entity should have been PUT
     const entityKey = `chats:${doc.id}`;
     expect(http.put).toHaveBeenCalledWith(
       '/entity/testdb',
@@ -411,8 +454,7 @@ describe('DeltaDatabaseClient – insert', () => {
   test('respects caller-supplied id', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-    http.get.mockResolvedValue({ data: { keys: [] } });
+    http.get.mockImplementation(() => Promise.resolve({ data: { keys: [] } }));
     http.put.mockResolvedValue({ data: {} });
 
     const doc = await client.insert('chats', { id: 'fixed-id', title: 'T' });
@@ -423,11 +465,6 @@ describe('DeltaDatabaseClient – insert', () => {
   test('adds secondary index entries when secondaryIndexFields provided', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-    // Use mockImplementation so every call returns a *fresh* object.
-    // mockResolvedValue would return the same reference and _addToIndex's
-    // push() would mutate it, causing _addToSecondaryIndex to see 'm1'
-    // already present and skip the PUT.
     http.get.mockImplementation(() => Promise.resolve({ data: { keys: [] } }));
     http.put.mockResolvedValue({ data: {} });
 
@@ -443,20 +480,16 @@ describe('DeltaDatabaseClient – insert', () => {
 describe('DeltaDatabaseClient – findById', () => {
   test('returns the document when found and not deleted', async () => {
     const client = makeClient();
-    const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-    http.get.mockResolvedValue({ data: { id: '1', title: 'hi', _deleted: false } });
+    client._http.get.mockResolvedValue({ data: { id: '1', title: 'hi', _deleted: false } });
 
     const doc = await client.findById('chats', '1');
 
     expect(doc).toMatchObject({ id: '1', title: 'hi' });
   });
 
-  test('returns null when document is marked _deleted', async () => {
+  test('returns null when document is marked _deleted (legacy guard)', async () => {
     const client = makeClient();
-    const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-    http.get.mockResolvedValue({ data: { id: '1', _deleted: true } });
+    client._http.get.mockResolvedValue({ data: { id: '1', _deleted: true } });
 
     const doc = await client.findById('chats', '1');
 
@@ -465,9 +498,7 @@ describe('DeltaDatabaseClient – findById', () => {
 
   test('returns null when document is not found (404)', async () => {
     const client = makeClient();
-    const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-    http.get.mockRejectedValue(axiosError(404));
+    client._http.get.mockRejectedValue(axiosError(404));
 
     const doc = await client.findById('chats', 'ghost');
 
@@ -479,16 +510,15 @@ describe('DeltaDatabaseClient – findAll', () => {
   test('returns all non-deleted documents listed in the index', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
 
     const docs = [
       { id: 'a', title: 'A' },
       { id: 'b', title: 'B', _deleted: true },
     ];
     http.get
-      .mockResolvedValueOnce({ data: { keys: ['a', 'b'] } }) // _readIndex
-      .mockResolvedValueOnce({ data: docs[0] })               // chats:a
-      .mockResolvedValueOnce({ data: docs[1] });              // chats:b (deleted)
+      .mockResolvedValueOnce({ data: { keys: ['a', 'b'] } })
+      .mockResolvedValueOnce({ data: docs[0] })
+      .mockResolvedValueOnce({ data: docs[1] });
 
     const result = await client.findAll('chats');
 
@@ -498,9 +528,7 @@ describe('DeltaDatabaseClient – findAll', () => {
 
   test('returns empty array when index is empty', async () => {
     const client = makeClient();
-    const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-    http.get.mockResolvedValue({ data: { keys: [] } });
+    client._http.get.mockResolvedValue({ data: { keys: [] } });
 
     const result = await client.findAll('chats');
 
@@ -512,8 +540,6 @@ describe('DeltaDatabaseClient – update', () => {
   test('merges fields and refreshes updatedAt', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-
     const existing = { id: '1', title: 'Old', createdAt: '2024-01-01T00:00:00.000Z', updatedAt: '2024-01-01T00:00:00.000Z' };
     http.get.mockResolvedValue({ data: existing });
     http.put.mockResolvedValue({ data: {} });
@@ -521,15 +547,13 @@ describe('DeltaDatabaseClient – update', () => {
     const updated = await client.update('chats', '1', { title: 'New' });
 
     expect(updated.title).toBe('New');
-    expect(updated.createdAt).toBe(existing.createdAt); // preserved
+    expect(updated.createdAt).toBe(existing.createdAt);
     expect(updated.updatedAt).not.toBe(existing.updatedAt);
   });
 
   test('returns null when document not found', async () => {
     const client = makeClient();
-    const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
-    http.get.mockRejectedValue(axiosError(404));
+    client._http.get.mockRejectedValue(axiosError(404));
 
     const result = await client.update('chats', 'ghost', { title: 'x' });
 
@@ -538,10 +562,9 @@ describe('DeltaDatabaseClient – update', () => {
 });
 
 describe('DeltaDatabaseClient – delete', () => {
-  test('marks entity _deleted and removes from master index', async () => {
+  test('hard-deletes entity via DELETE and removes from master index', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
 
     const existing = { id: '1', title: 'hi' };
     let getCallCount = 0;
@@ -550,26 +573,34 @@ describe('DeltaDatabaseClient – delete', () => {
       if (getCallCount === 1) return Promise.resolve({ data: existing }); // findById
       return Promise.resolve({ data: { keys: ['1'] } });                   // _readIndex
     });
-    http.put.mockResolvedValue({ data: {} });
+    http.delete.mockResolvedValue({ data: { status: 'ok' } });
+    http.put.mockResolvedValue({ data: {} }); // index update
 
     const result = await client.delete('chats', '1');
 
     expect(result).toEqual({ ok: true });
-    const softDeletePut = http.put.mock.calls.find((c) =>
-      c[1]['chats:1'] && c[1]['chats:1']._deleted === true
+    // Real hard-delete should have been called
+    expect(http.delete).toHaveBeenCalledWith(
+      '/entity/testdb',
+      expect.objectContaining({ params: { key: 'chats:1' } })
     );
-    expect(softDeletePut).toBeDefined();
+    // No soft-delete PUT (no _deleted: true in any PUT body)
+    const softDeletePut = http.put.mock.calls.find(
+      (c) => c[1] && c[1]['chats:1'] && c[1]['chats:1']._deleted === true
+    );
+    expect(softDeletePut).toBeUndefined();
   });
 
   test('returns { ok: false } when entity does not exist', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
     http.get.mockRejectedValue(axiosError(404));
 
     const result = await client.delete('chats', 'ghost');
 
     expect(result).toEqual({ ok: false });
+    // DELETE should NOT be called when entity doesn't exist
+    expect(http.delete).not.toHaveBeenCalled();
   });
 });
 
@@ -577,32 +608,28 @@ describe('DeltaDatabaseClient – query', () => {
   test('uses secondary index when it has entries', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
 
     const msg = { id: 'm1', chatId: 'c1', role: 'user', content: 'hi' };
     http.get
-      .mockResolvedValueOnce({ data: { keys: ['m1'] } }) // secondary index GET
-      .mockResolvedValueOnce({ data: msg });               // messages:m1 GET
+      .mockResolvedValueOnce({ data: { keys: ['m1'] } })
+      .mockResolvedValueOnce({ data: msg });
 
     const results = await client.query('messages', { chatId: 'c1' });
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({ chatId: 'c1' });
-    // Should have hit the secondary index key
-    expect(http.get.mock.calls[0][0]).toBe('/entity/testdb');
     expect(http.get.mock.calls[0][1].params.key).toBe('messages:_idx:chatId:c1');
   });
 
   test('falls back to findAll when secondary index is empty', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
 
     const msg = { id: 'm2', chatId: 'c2', role: 'assistant', content: 'hello' };
     http.get
-      .mockResolvedValueOnce({ data: { keys: [] } })     // secondary index empty
-      .mockResolvedValueOnce({ data: { keys: ['m2'] } }) // _readIndex for findAll
-      .mockResolvedValueOnce({ data: msg });               // messages:m2
+      .mockResolvedValueOnce({ data: { keys: [] } })
+      .mockResolvedValueOnce({ data: { keys: ['m2'] } })
+      .mockResolvedValueOnce({ data: msg });
 
     const results = await client.query('messages', { chatId: 'c2' });
 
@@ -612,9 +639,7 @@ describe('DeltaDatabaseClient – query', () => {
   test('respects limit', async () => {
     const client = makeClient();
     const http = client._http;
-    http.post.mockResolvedValue({ data: { token: 'tok' } });
 
-    // 3 messages in secondary index
     const msgs = [
       { id: 'x1', chatId: 'cx' },
       { id: 'x2', chatId: 'cx' },
@@ -638,14 +663,13 @@ describe('DeltaDatabaseAdapter', () => {
   const ORIGINAL_ENV = { ...process.env };
 
   afterEach(() => {
-    // Restore env and module registry after each test
     process.env = { ...ORIGINAL_ENV };
     jest.resetModules();
   });
 
   test('throws a descriptive error when DELTA_DB_URL is not set', () => {
     delete process.env.DELTA_DB_URL;
-    process.env.DELTA_DB_ADMIN_KEY = 'k';
+    process.env.DELTA_DB_API_KEY = 'k';
 
     const { DeltaDatabaseAdapter } = require('../db/DeltaDatabaseAdapter');
 
@@ -662,11 +686,33 @@ describe('DeltaDatabaseAdapter', () => {
 
   test('constructs successfully when DELTA_DB_URL is set', () => {
     process.env.DELTA_DB_URL = 'http://localhost:8080';
-    process.env.DELTA_DB_ADMIN_KEY = 'k';
+    process.env.DELTA_DB_API_KEY = 'k';
 
     const { DeltaDatabaseAdapter } = require('../db/DeltaDatabaseAdapter');
 
     expect(() => new DeltaDatabaseAdapter()).not.toThrow();
+  });
+
+  test('reads DELTA_DB_API_KEY as the primary key', () => {
+    process.env.DELTA_DB_URL = 'http://localhost:8080';
+    process.env.DELTA_DB_API_KEY = 'primary-key';
+    delete process.env.DELTA_DB_ADMIN_KEY;
+
+    const { DeltaDatabaseAdapter } = require('../db/DeltaDatabaseAdapter');
+    const adapter = new DeltaDatabaseAdapter();
+
+    expect(adapter._backend.apiKey).toBe('primary-key');
+  });
+
+  test('falls back to DELTA_DB_ADMIN_KEY when DELTA_DB_API_KEY is absent', () => {
+    process.env.DELTA_DB_URL = 'http://localhost:8080';
+    delete process.env.DELTA_DB_API_KEY;
+    process.env.DELTA_DB_ADMIN_KEY = 'fallback-key';
+
+    const { DeltaDatabaseAdapter } = require('../db/DeltaDatabaseAdapter');
+    const adapter = new DeltaDatabaseAdapter();
+
+    expect(adapter._backend.apiKey).toBe('fallback-key');
   });
 
   test('mode getter always returns "deltadatabase"', () => {
@@ -678,18 +724,21 @@ describe('DeltaDatabaseAdapter', () => {
     expect(adapter.mode).toBe('deltadatabase');
   });
 
-  test('initialize() calls registerSchemas() on the backend client', async () => {
+  test('initialize() calls registerSchemas() then listSchemas() on the backend', async () => {
     process.env.DELTA_DB_URL = 'http://localhost:8080';
 
     const { DeltaDatabaseAdapter } = require('../db/DeltaDatabaseAdapter');
     const adapter = new DeltaDatabaseAdapter();
 
     const registerSchemasMock = jest.fn().mockResolvedValue(undefined);
+    const listSchemasMock = jest.fn().mockResolvedValue(['chats', 'messages']);
     adapter._backend.registerSchemas = registerSchemasMock;
+    adapter._backend.listSchemas     = listSchemasMock;
 
     await adapter.initialize();
 
     expect(registerSchemasMock).toHaveBeenCalledTimes(1);
+    expect(listSchemasMock).toHaveBeenCalledTimes(1);
   });
 
   test('getAdapter() returns the same singleton on repeated calls', () => {
@@ -708,7 +757,6 @@ describe('DeltaDatabaseAdapter', () => {
     process.env.DELTA_DB_URL = 'http://localhost:8080';
     const { DeltaDatabaseAdapter } = require('../db/DeltaDatabaseAdapter');
     const adapter = new DeltaDatabaseAdapter();
-    // Stub all backend methods to avoid real HTTP calls
     const stub = jest.fn().mockResolvedValue({ id: 'x' });
     adapter._backend.insert    = stub;
     adapter._backend.findAll   = stub;
@@ -767,7 +815,7 @@ describe('DeltaDatabaseAdapter', () => {
     expect(stub).toHaveBeenCalledWith('messages', { chatId: 'c1' });
   });
 
-  test('deleteMessagesByChatId() soft-deletes all messages for the chat', async () => {
+  test('deleteMessagesByChatId() deletes all messages for the chat', async () => {
     process.env.DELTA_DB_URL = 'http://localhost:8080';
     const { DeltaDatabaseAdapter } = require('../db/DeltaDatabaseAdapter');
     const adapter = new DeltaDatabaseAdapter();
@@ -815,14 +863,10 @@ describe('DeltaDatabaseAdapter', () => {
   });
 
   test('updateSettings() always calls update because getSettings fallback always has id', async () => {
-    // getSettings() returns (findById result) || { id: 'global' }.
-    // Even when findById returns null the fallback { id:'global' } is truthy
-    // and has an id, so updateSettings always takes the update() path.
-    // The insert() branch in the source is unreachable dead code.
     process.env.DELTA_DB_URL = 'http://localhost:8080';
     const { DeltaDatabaseAdapter } = require('../db/DeltaDatabaseAdapter');
     const adapter = new DeltaDatabaseAdapter();
-    adapter._backend.findById = jest.fn().mockResolvedValue(null); // simulates first-run
+    adapter._backend.findById = jest.fn().mockResolvedValue(null);
     adapter._backend.update   = jest.fn().mockResolvedValue({ id: 'global', openaiKey: 'new' });
     adapter._backend.insert   = jest.fn();
 
