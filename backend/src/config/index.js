@@ -7,15 +7,15 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
 
   deltaDb: {
-    // Base URL of the DeltaDatabase REST service.
-    // Leave empty to use the local FileSystemFallback (dev shim).
+    // Base URL of the DeltaDatabase REST service (required).
     url: process.env.DELTA_DB_URL || null,
-    // Admin key configured on the DeltaDatabase server (-e ADMIN_KEY=…).
-    adminKey: process.env.DELTA_DB_ADMIN_KEY || null,
+    // API key used directly as the Bearer token on every request.
+    // Supply an admin key or a scoped dk_… key — no login step needed.
+    // Reads DELTA_DB_API_KEY first; falls back to DELTA_DB_ADMIN_KEY for
+    // backwards compatibility.
+    apiKey: process.env.DELTA_DB_API_KEY || process.env.DELTA_DB_ADMIN_KEY || null,
     // Named database (namespace) inside DeltaDatabase.
     database: process.env.DELTA_DB_DATABASE || 'deltachat',
-    // Used by FileSystemFallback only.
-    dataDir: process.env.DELTA_DB_DATA_DIR || './data',
   },
 
   openai: {

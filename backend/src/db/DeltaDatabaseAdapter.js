@@ -3,17 +3,22 @@
 /**
  * DeltaDatabaseAdapter
  *
- * Wraps the DeltaDatabase REST API (https://github.com/DeltaRule/DeltaDatabase).
+ * Wraps the DeltaDatabase REST API (see docs/openapi.yaml).
  * Run DeltaDatabase with Docker:
  *
  *   docker run -d -p 8080:8080 -e ADMIN_KEY=changeme -v delta_data:/shared/db \
  *     donti/deltadatabase:latest-aio
  *
  * Configure via environment variables:
- *   DELTA_DB_URL        Base URL of the DeltaDatabase instance  (required)
- *   DELTA_DB_ADMIN_KEY  Admin key or API key — used directly as the Bearer token
- *                       on every request (no login step, no token refresh).
- *   DELTA_DB_DATABASE   Database (namespace) name               (default: deltachat)
+ *   DELTA_DB_URL       Base URL of the DeltaDatabase instance  (required)
+ *   DELTA_DB_API_KEY   Admin key or scoped API key (dk_…)      (required)
+ *   DELTA_DB_DATABASE  Database (namespace) name               (default: deltachat)
+ *
+ * ── Authentication ────────────────────────────────────────────────────────────
+ * Per the OpenAPI spec: admin keys and API keys (dk_…) are used DIRECTLY as
+ * Bearer tokens on every request.  No login step is needed, no session token is
+ * obtained, and no token ever expires unless you explicitly set expires_in when
+ * creating an API key.  POST /api/login exists only for the built-in browser UI.
  *
  * ── Authentication ───────────────────────────────────────────────────────────
  * Per the DeltaDatabase OpenAPI spec, server-to-server clients must supply an
@@ -23,22 +28,21 @@
  *
  * ── Storage design ───────────────────────────────────────────────────────────
  * DeltaDatabase stores entities as key → JSON document pairs inside a named
- * database.  There is no built-in "list all" or "delete" operation, so this
- * adapter maintains explicit index documents:
+ * database.  There is no built-in "list all" operation, so this adapter
+ * maintains explicit index documents:
  *
  *   Key pattern                   Purpose
  *   ──────────────────────────    ────────────────────────────────────────────
  *   {col}:{id}                    The entity itself
- *   {col}:_index                  Master list of all non-deleted IDs
+ *   {col}:_index                  Master list of all active IDs
  *   {col}:_idx:{field}:{value}    Secondary index: IDs where doc[field]===value
  *
- * Deletions are soft: the entity is marked { _deleted: true } and its ID is
- * pruned from every index it appeared in.
+ * Deletions use the real DELETE /entity/{db}?key={k} endpoint and prune index
+ * documents afterwards.
  *
  * ── Schema registration ───────────────────────────────────────────────────────
- * On startup, call adapter.initialize() to register JSON Schemas for every
- * collection via PUT /schema/{schemaID}.  This enables DeltaDatabase to
- * validate documents before they are stored.
+ * On startup, adapter.initialize() registers JSON Schemas for every collection
+ * via PUT /schema/{schemaID} and then confirms them via GET /admin/schemas.
  *
  * ── Required configuration ───────────────────────────────────────────────────
  * DELTA_DB_URL must always be set.  The app will refuse to start without it.
@@ -47,8 +51,6 @@
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../config');
-
-const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // kept for backwards-compat; unused
 
 // ── JSON Schemas for DeltaDatabase collections ────────────────────────────────
 
@@ -159,48 +161,37 @@ const SCHEMAS = {
 // ── DeltaDatabaseClient ───────────────────────────────────────────────────────
 
 class DeltaDatabaseClient {
-  constructor(baseUrl, adminKey, database) {
+  constructor(baseUrl, apiKey, database) {
     this.baseUrl  = baseUrl.replace(/\/$/, '');
-    this.adminKey = adminKey || null;
+    this.apiKey   = apiKey || null;
     this.database = database || 'deltachat';
     this._http = axios.create({ baseURL: this.baseUrl, timeout: 15000 });
   }
 
   // ── Auth ────────────────────────────────────────────────────────────────────
+  //
+  // Per the OpenAPI spec: admin keys and API keys (dk_…) are supplied directly
+  // as the Bearer value on every request.  No login step is needed.
 
-  /**
-   * Returns an Authorization header using the admin/API key directly as the
-   * Bearer token, per the DeltaDatabase OpenAPI spec:
-   *   "For all server-to-server and script usage, supply an admin key or API key
-   *    directly as the Bearer value on every request.  No login step is needed
-   *    and no token ever needs to be refreshed."
-   *
-   * POST /api/login and session tokens are for the built-in browser UI only.
-   */
   _authHeader() {
-    if (!this.adminKey) {
-      throw new Error(
-        '[DeltaDB] DELTA_DB_ADMIN_KEY is required for server-to-server authentication'
-      );
-    }
-    return { Authorization: `Bearer ${this.adminKey}` };
+    return { Authorization: `Bearer ${this.apiKey}` };
   }
 
   // ── DeltaDatabase REST helpers ────────────────────────────────────────────────
 
   /** PUT /entity/{db}  { key: doc, … }  – upsert one or more entities. */
   async _put(entities) {
-    const headers = this._authHeader();
-    await this._http.put(`/entity/${this.database}`, entities, { headers });
+    await this._http.put(`/entity/${this.database}`, entities, {
+      headers: this._authHeader(),
+    });
   }
 
   /** GET /entity/{db}?key={k}  – fetch one entity; returns null on 404. */
   async _get(key) {
-    const headers = this._authHeader();
     try {
       const { data } = await this._http.get(`/entity/${this.database}`, {
         params: { key },
-        headers,
+        headers: this._authHeader(),
       });
       return data;
     } catch (err) {
@@ -209,19 +200,12 @@ class DeltaDatabaseClient {
     }
   }
 
-  /** DELETE /entity/{db}?key={k}  – permanently delete one entity. */
+  /** DELETE /entity/{db}?key={k}  – hard-delete one entity. */
   async _deleteEntity(key) {
-    const headers = this._authHeader();
-    try {
-      await this._http.delete(`/entity/${this.database}`, {
-        params: { key },
-        headers,
-      });
-    } catch (err) {
-      // 404 means already gone – treat as success
-      if (err.response && err.response.status === 404) return;
-      throw err;
-    }
+    await this._http.delete(`/entity/${this.database}`, {
+      params: { key },
+      headers: this._authHeader(),
+    });
   }
 
   // ── Index helpers ─────────────────────────────────────────────────────────────
@@ -311,6 +295,8 @@ class DeltaDatabaseClient {
   }
 
   /**
+   * Hard-delete an entity via DELETE /entity/{db}?key={k}, then prune indexes.
+   *
    * @param {string}   collection
    * @param {string}   id
    * @param {Array<{field:string,value:any}>} [secondaryIndexes]  indexes to prune
@@ -319,7 +305,7 @@ class DeltaDatabaseClient {
     const existing = await this.findById(collection, id);
     if (!existing) return { ok: false };
 
-    // Remove from master index
+    await this._deleteEntity(`${collection}:${id}`);
     await this._removeFromIndex(collection, id);
 
     // Remove from all secondary indexes
@@ -379,7 +365,7 @@ class DeltaDatabaseClient {
    *
    * For each schema:
    *   1. GET /schema/{schemaID}  — check whether it already exists.
-   *   2. If missing (404), PUT /schema/{schemaID}  — register it.
+   *   2. PUT /schema/{schemaID}  — store/update the latest definition.
    *   3. GET /schema/{schemaID}  — verify the stored schema matches expectation.
    *
    * Schema registration is best-effort: failures are logged but do not abort
@@ -419,6 +405,21 @@ class DeltaDatabaseClient {
       }
     }
   }
+
+  /**
+   * GET /admin/schemas  – list all registered schema IDs (no auth required).
+   * Returns an array of schema ID strings, or an empty array on failure.
+   */
+  async listSchemas() {
+    try {
+      const { data } = await this._http.get('/admin/schemas');
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      const status = err.response ? err.response.status : 'network error';
+      console.warn(`[DeltaDB] ⚠  Could not list schemas (${status}): ${err.message}`);
+      return [];
+    }
+  }
 }
 
 // ── DeltaDatabaseAdapter ──────────────────────────────────────────────────────
@@ -431,13 +432,13 @@ class DeltaDatabaseAdapter {
         '  Start DeltaDatabase with Docker:\n' +
         '    docker run -d -p 8080:8080 -e ADMIN_KEY=changeme -v delta_data:/shared/db \\\n' +
         '      donti/deltadatabase:latest-aio\n' +
-        '  Then set DELTA_DB_URL=http://127.0.0.1:8080 and DELTA_DB_ADMIN_KEY=changeme'
+        '  Then set DELTA_DB_URL=http://127.0.0.1:8080 and DELTA_DB_API_KEY=changeme'
       );
     }
 
     this._backend = new DeltaDatabaseClient(
       config.deltaDb.url,
-      config.deltaDb.adminKey,
+      config.deltaDb.apiKey,
       config.deltaDb.database
     );
     this._mode = 'deltadatabase';
@@ -451,11 +452,15 @@ class DeltaDatabaseAdapter {
   get mode() { return this._mode; }
 
   /**
-   * Register JSON Schemas for all collections.
+   * Register JSON Schemas for all collections and confirm via GET /admin/schemas.
    * Call once at application startup after the adapter is created.
    */
   async initialize() {
     await this._backend.registerSchemas();
+    const registered = await this._backend.listSchemas();
+    if (registered.length > 0) {
+      console.log(`[DeltaDB] Active schemas on server: ${registered.join(', ')}`);
+    }
   }
 
   // ── Chats ───────────────────────────────────────────────────────────────────
