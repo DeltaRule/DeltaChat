@@ -32,6 +32,7 @@
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../config');
+const { validate } = require('./schema');
 
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // refresh 5 min before expiry
 
@@ -157,6 +158,8 @@ class DeltaDatabaseClient {
     const now = new Date().toISOString();
     const id  = doc.id || uuidv4();
     const entity = { ...doc, id, createdAt: doc.createdAt || now, updatedAt: now };
+
+    validate(collection, entity);
 
     await this._put({ [`${collection}:${id}`]: entity });
     await this._addToIndex(collection, id);
@@ -353,8 +356,8 @@ class DeltaDatabaseAdapter {
   }
 
   async updateSettings(fields) {
-    const existing = await this.getSettings();
-    if (existing && existing.id) {
+    const existing = await this._backend.findById('settings', 'global');
+    if (existing) {
       return this._backend.update('settings', 'global', fields);
     }
     return this._backend.insert('settings', { id: 'global', ...fields });
