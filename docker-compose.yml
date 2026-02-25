@@ -1,0 +1,98 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DeltaChat – full-stack AI chat interface
+#
+# Services:
+#   deltadatabase  – DeltaDatabase REST service (primary data store)
+#   chroma         – ChromaDB vector store
+#   tika           – Apache Tika document processor
+#   backend        – Node.js/Express API + WebSocket server
+#   frontend       – Vue 3 / Vuetify web app (production build served by nginx)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── DeltaDatabase ──────────────────────────────────────────────────────────
+  deltadatabase:
+    image: donti/deltadatabase:latest-aio
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMIN_KEY: "${DELTA_DB_ADMIN_KEY:-changeme}"
+    volumes:
+      - delta_data:/shared/db
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── ChromaDB (vector store) ────────────────────────────────────────────────
+  chroma:
+    image: chromadb/chroma:latest
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Apache Tika (binary processor) ────────────────────────────────────────
+  tika:
+    image: apache/tika:latest-full
+    restart: unless-stopped
+    ports:
+      - "9998:9998"
+
+  # ── Backend (Node.js) ──────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DELTA_DB_URL: "http://deltadatabase:8080"
+      DELTA_DB_ADMIN_KEY: "${DELTA_DB_ADMIN_KEY:-changeme}"
+      DELTA_DB_DATABASE: "${DELTA_DB_DATABASE:-deltachat}"
+      CHROMA_URL: "http://chroma:8000"
+      TIKA_URL: "http://tika:9998"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-}"
+      WEBHOOK_SECRET: "${WEBHOOK_SECRET:-change-me-in-production}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:5173,http://localhost:80}"
+      BINARY_STORAGE_PATH: /app/data/binaries
+      MCP_SERVER_URL: "${MCP_SERVER_URL:-}"
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      deltadatabase:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+
+  # ── Frontend (Vue 3 / Vuetify) ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  delta_data:
+  chroma_data:
+  backend_data:

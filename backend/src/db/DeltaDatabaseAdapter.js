@@ -3,49 +3,267 @@
 /**
  * DeltaDatabaseAdapter
  *
- * This adapter is designed to communicate with DeltaDatabase
- * (https://github.com/DeltaRule/DeltaDatabase), a Python-based database.
+ * Wraps the DeltaDatabase REST API (https://github.com/DeltaRule/DeltaDatabase).
+ * Run DeltaDatabase with Docker:
  *
- * In production the adapter talks to a Python bridge HTTP service
- * (set DELTA_DB_URL in .env).  When that URL is absent **or** the service
- * is unreachable the adapter automatically falls back to
- * `FileSystemFallback` mode, which persists every collection as a JSON
- * file inside the configured `dataDir`.
+ *   docker run -d -p 8080:8080 -e ADMIN_KEY=changeme -v delta_data:/shared/db \
+ *     donti/deltadatabase:latest-aio
  *
- * ┌─────────────────────────────────────────────────────────────────┐
- * │  ⚠  FileSystemFallback is a DEVELOPMENT SHIM.                  │
- * │  It is NOT a replacement for DeltaDatabase.  It exists only to  │
- * │  let the application boot and be tested without a running       │
- * │  Python bridge.  Never use it in production.                    │
- * └─────────────────────────────────────────────────────────────────┘
+ * Configure via environment variables:
+ *   DELTA_DB_URL        Base URL of the DeltaDatabase instance  (default: http://127.0.0.1:8080)
+ *   DELTA_DB_ADMIN_KEY  Admin key for authentication
+ *   DELTA_DB_DATABASE   Database (namespace) name               (default: deltachat)
  *
- * Python bridge contract (REST):
- *   POST   /collection/:name          – insert one document  { id, ...fields }
- *   GET    /collection/:name          – list all documents   → [...]
- *   GET    /collection/:name/:id      – get one document     → {...}
- *   PUT    /collection/:name/:id      – update document      { ...fields }
- *   DELETE /collection/:name/:id      – delete document      → { ok: true }
- *   POST   /collection/:name/query    – query                { filter, limit }
+ * ── Storage design ───────────────────────────────────────────────────────────
+ * DeltaDatabase stores entities as key → JSON document pairs inside a named
+ * database.  There is no built-in "list all" or "delete" operation, so this
+ * adapter maintains explicit index documents:
+ *
+ *   Key pattern                   Purpose
+ *   ──────────────────────────    ────────────────────────────────────────────
+ *   {col}:{id}                    The entity itself
+ *   {col}:_index                  Master list of all non-deleted IDs
+ *   {col}:_idx:{field}:{value}    Secondary index: IDs where doc[field]===value
+ *
+ * Deletions are soft: the entity is marked { _deleted: true } and its ID is
+ * pruned from every index it appeared in.
+ *
+ * ── Fallback ─────────────────────────────────────────────────────────────────
+ * When DELTA_DB_URL is not set the adapter uses FileSystemFallback – a local
+ * JSON-file shim for development without Docker.
+ * ⚠  FileSystemFallback is NOT for production use.
  */
 
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../config');
 
-// ---------------------------------------------------------------------------
-// FileSystemFallback
-// ---------------------------------------------------------------------------
+const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // refresh 5 min before expiry
 
+// ── DeltaDatabaseClient ───────────────────────────────────────────────────────
+
+class DeltaDatabaseClient {
+  constructor(baseUrl, adminKey, database) {
+    this.baseUrl  = baseUrl.replace(/\/$/, '');
+    this.adminKey = adminKey || null;
+    this.database = database || 'deltachat';
+    this._token       = null;
+    this._tokenExpiry = null;
+    this._http = axios.create({ baseURL: this.baseUrl, timeout: 15000 });
+  }
+
+  // ── Auth ────────────────────────────────────────────────────────────────────
+
+  async _ensureToken() {
+    const needsRefresh =
+      !this._token ||
+      (this._tokenExpiry && Date.now() > this._tokenExpiry - TOKEN_REFRESH_MARGIN_MS);
+
+    if (needsRefresh) {
+      const body = this.adminKey ? { key: this.adminKey } : { client_id: 'deltachat' };
+      const { data } = await this._http.post('/api/login', body);
+      this._token       = data.token;
+      this._tokenExpiry = data.expires_at ? new Date(data.expires_at).getTime() : null;
+    }
+    return this._token;
+  }
+
+  async _authHeader() {
+    return { Authorization: `Bearer ${await this._ensureToken()}` };
+  }
+
+  // ── DeltaDatabase REST helpers ────────────────────────────────────────────────
+
+  /** PUT /entity/{db}  { key: doc, … }  – upsert one or more entities. */
+  async _put(entities) {
+    const headers = await this._authHeader();
+    try {
+      await this._http.put(`/entity/${this.database}`, entities, { headers });
+    } catch (err) {
+      if (err.response && err.response.status === 401) {
+        this._token = null;
+        const h = await this._authHeader();
+        await this._http.put(`/entity/${this.database}`, entities, { headers: h });
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  /** GET /entity/{db}?key={k}  – fetch one entity; returns null on 404. */
+  async _get(key) {
+    const headers = await this._authHeader();
+    try {
+      const { data } = await this._http.get(`/entity/${this.database}`, {
+        params: { key },
+        headers,
+      });
+      return data;
+    } catch (err) {
+      if (err.response && err.response.status === 404) return null;
+      if (err.response && err.response.status === 401) {
+        this._token = null;
+        const h = await this._authHeader();
+        const { data } = await this._http.get(`/entity/${this.database}`, {
+          params: { key },
+          headers: h,
+        });
+        return data;
+      }
+      throw err;
+    }
+  }
+
+  // ── Index helpers ─────────────────────────────────────────────────────────────
+
+  async _readIndex(collection) {
+    return (await this._get(`${collection}:_index`)) || { keys: [] };
+  }
+
+  async _addToIndex(collection, id) {
+    const idx = await this._readIndex(collection);
+    if (!idx.keys.includes(id)) {
+      idx.keys.push(id);
+      await this._put({ [`${collection}:_index`]: idx });
+    }
+  }
+
+  async _removeFromIndex(collection, id) {
+    const idx = await this._readIndex(collection);
+    const before = idx.keys.length;
+    idx.keys = idx.keys.filter((k) => k !== id);
+    if (idx.keys.length !== before) {
+      await this._put({ [`${collection}:_index`]: idx });
+    }
+  }
+
+  async _addToSecondaryIndex(collection, field, value, id) {
+    const key = `${collection}:_idx:${field}:${value}`;
+    const idx = (await this._get(key)) || { keys: [] };
+    if (!idx.keys.includes(id)) {
+      idx.keys.push(id);
+      await this._put({ [key]: idx });
+    }
+  }
+
+  async _removeFromSecondaryIndex(collection, field, value, id) {
+    const key = `${collection}:_idx:${field}:${value}`;
+    const idx = (await this._get(key)) || { keys: [] };
+    const before = idx.keys.length;
+    idx.keys = idx.keys.filter((k) => k !== id);
+    if (idx.keys.length !== before) {
+      await this._put({ [key]: idx });
+    }
+  }
+
+  // ── CRUD ──────────────────────────────────────────────────────────────────────
+
+  async insert(collection, doc, secondaryIndexFields = []) {
+    const now = new Date().toISOString();
+    const id  = doc.id || uuidv4();
+    const entity = { ...doc, id, createdAt: doc.createdAt || now, updatedAt: now };
+
+    await this._put({ [`${collection}:${id}`]: entity });
+    await this._addToIndex(collection, id);
+
+    for (const field of secondaryIndexFields) {
+      if (entity[field] !== undefined) {
+        await this._addToSecondaryIndex(collection, field, entity[field], id);
+      }
+    }
+    return entity;
+  }
+
+  async findAll(collection) {
+    const idx = await this._readIndex(collection);
+    if (!idx.keys.length) return [];
+    const docs = await Promise.all(idx.keys.map((id) => this._get(`${collection}:${id}`)));
+    return docs.filter((d) => d && !d._deleted);
+  }
+
+  async findById(collection, id) {
+    const doc = await this._get(`${collection}:${id}`);
+    return doc && !doc._deleted ? doc : null;
+  }
+
+  async update(collection, id, fields) {
+    const existing = await this.findById(collection, id);
+    if (!existing) return null;
+    const updated = {
+      ...existing,
+      ...fields,
+      id,
+      createdAt: existing.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+    await this._put({ [`${collection}:${id}`]: updated });
+    return updated;
+  }
+
+  /**
+   * @param {string}   collection
+   * @param {string}   id
+   * @param {Array<{field:string,value:any}>} [secondaryIndexes]  indexes to prune
+   */
+  async delete(collection, id, secondaryIndexes = []) {
+    const existing = await this.findById(collection, id);
+    if (!existing) return { ok: false };
+
+    await this._put({
+      [`${collection}:${id}`]: {
+        ...existing,
+        _deleted: true,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    await this._removeFromIndex(collection, id);
+
+    for (const { field, value } of secondaryIndexes) {
+      await this._removeFromSecondaryIndex(collection, field, value, id);
+    }
+    return { ok: true };
+  }
+
+  async query(collection, filter = {}, limit = 100) {
+    const filterEntries = Object.entries(filter);
+    if (!filterEntries.length) return this.findAll(collection);
+
+    // Try secondary index for the first filter field
+    const [field, value] = filterEntries[0];
+    const idxKey = `${collection}:_idx:${field}:${value}`;
+    const idx    = (await this._get(idxKey)) || { keys: [] };
+
+    let docs;
+    if (idx.keys.length > 0) {
+      const fetched = await Promise.all(
+        idx.keys.map((id) => this._get(`${collection}:${id}`))
+      );
+      docs = fetched.filter((d) => d && !d._deleted);
+    } else {
+      docs = await this.findAll(collection);
+    }
+
+    // Apply remaining filters in-memory
+    for (const [k, v] of filterEntries.slice(1)) {
+      docs = docs.filter((d) => d[k] === v);
+    }
+
+    return docs.slice(0, limit);
+  }
+}
+
+// ── FileSystemFallback ────────────────────────────────────────────────────────
+
+/**
+ * ⚠  DEVELOPMENT SHIM — do NOT use in production.
+ * Mirrors the DeltaDatabaseClient interface using local JSON files.
+ */
 class FileSystemFallback {
   constructor(dataDir) {
     this.dataDir = dataDir;
-    this._ensureDir(dataDir);
-  }
-
-  _ensureDir(dir) {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dataDir, { recursive: true });
   }
 
   _filePath(collection) {
@@ -54,251 +272,167 @@ class FileSystemFallback {
 
   _read(collection) {
     const fp = this._filePath(collection);
-    if (!fs.existsSync(fp)) return [];
-    try {
-      return JSON.parse(fs.readFileSync(fp, 'utf8'));
-    } catch {
-      return [];
-    }
+    if (!fs.existsSync(fp)) return {};
+    try { return JSON.parse(fs.readFileSync(fp, 'utf8')); } catch { return {}; }
   }
 
-  _write(collection, docs) {
-    fs.writeFileSync(this._filePath(collection), JSON.stringify(docs, null, 2));
+  _write(collection, data) {
+    fs.writeFileSync(this._filePath(collection), JSON.stringify(data, null, 2));
   }
 
-  async insert(collection, doc) {
-    const docs = this._read(collection);
-    if (!doc.id) doc.id = uuidv4();
-    if (!doc.createdAt) doc.createdAt = new Date().toISOString();
-    doc.updatedAt = new Date().toISOString();
-    docs.push(doc);
-    this._write(collection, docs);
-    return doc;
+  async insert(collection, doc, _secondaryIndexFields = []) {
+    const store  = this._read(collection);
+    const now    = new Date().toISOString();
+    const id     = doc.id || uuidv4();
+    const entity = { ...doc, id, createdAt: doc.createdAt || now, updatedAt: now };
+    store[id] = entity;
+    this._write(collection, store);
+    return entity;
   }
 
   async findAll(collection) {
-    return this._read(collection);
+    return Object.values(this._read(collection)).filter((d) => !d._deleted);
   }
 
   async findById(collection, id) {
-    return this._read(collection).find((d) => d.id === id) || null;
+    const doc = this._read(collection)[id];
+    return doc && !doc._deleted ? doc : null;
   }
 
   async update(collection, id, fields) {
-    const docs = this._read(collection);
-    const idx = docs.findIndex((d) => d.id === id);
-    if (idx === -1) return null;
-    docs[idx] = { ...docs[idx], ...fields, id, updatedAt: new Date().toISOString() };
-    this._write(collection, docs);
-    return docs[idx];
+    const store = this._read(collection);
+    if (!store[id] || store[id]._deleted) return null;
+    store[id] = { ...store[id], ...fields, id, updatedAt: new Date().toISOString() };
+    this._write(collection, store);
+    return store[id];
   }
 
-  async delete(collection, id) {
-    const docs = this._read(collection);
-    const filtered = docs.filter((d) => d.id !== id);
-    this._write(collection, filtered);
+  async delete(collection, id, _secondaryIndexes = []) {
+    const store = this._read(collection);
+    if (!store[id]) return { ok: false };
+    store[id] = { ...store[id], _deleted: true, updatedAt: new Date().toISOString() };
+    this._write(collection, store);
     return { ok: true };
   }
 
   async query(collection, filter = {}, limit = 100) {
-    let docs = this._read(collection);
-    for (const [key, value] of Object.entries(filter)) {
-      docs = docs.filter((d) => d[key] === value);
+    let docs = await this.findAll(collection);
+    for (const [k, v] of Object.entries(filter)) {
+      docs = docs.filter((d) => d[k] === v);
     }
     return docs.slice(0, limit);
   }
 }
 
-// ---------------------------------------------------------------------------
-// HTTP bridge client (delegates to the Python DeltaDatabase service)
-// ---------------------------------------------------------------------------
-
-class HttpBridge {
-  constructor(baseUrl) {
-    this.client = axios.create({ baseURL: baseUrl, timeout: 10000 });
-  }
-
-  async insert(collection, doc) {
-    const { data } = await this.client.post(`/collection/${collection}`, doc);
-    return data;
-  }
-
-  async findAll(collection) {
-    const { data } = await this.client.get(`/collection/${collection}`);
-    return data;
-  }
-
-  async findById(collection, id) {
-    const { data } = await this.client.get(`/collection/${collection}/${id}`);
-    return data;
-  }
-
-  async update(collection, id, fields) {
-    const { data } = await this.client.put(`/collection/${collection}/${id}`, fields);
-    return data;
-  }
-
-  async delete(collection, id) {
-    const { data } = await this.client.delete(`/collection/${collection}/${id}`);
-    return data;
-  }
-
-  async query(collection, filter = {}, limit = 100) {
-    const { data } = await this.client.post(`/collection/${collection}/query`, {
-      filter,
-      limit,
-    });
-    return data;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// DeltaDatabaseAdapter  (public API used by the rest of the application)
-// ---------------------------------------------------------------------------
+// ── DeltaDatabaseAdapter ──────────────────────────────────────────────────────
 
 class DeltaDatabaseAdapter {
   constructor() {
     if (config.deltaDb.url) {
-      this._backend = new HttpBridge(config.deltaDb.url);
-      this._mode = 'http';
-      console.log(`[DeltaDB] Using HTTP bridge → ${config.deltaDb.url}`);
+      this._backend = new DeltaDatabaseClient(
+        config.deltaDb.url,
+        config.deltaDb.adminKey,
+        config.deltaDb.database
+      );
+      this._mode = 'deltadatabase';
+      console.log(
+        `[DeltaDB] Connected to DeltaDatabase at ${config.deltaDb.url}` +
+        ` (database: "${config.deltaDb.database}")`
+      );
     } else {
       this._backend = new FileSystemFallback(config.deltaDb.dataDir);
-      this._mode = 'filesystem';
+      this._mode    = 'filesystem';
       console.warn(
-        '[DeltaDB] ⚠  DELTA_DB_URL not set – using FileSystemFallback (dev shim).  ' +
-          'Set DELTA_DB_URL to point to the Python DeltaDatabase bridge in production.'
+        '[DeltaDB] ⚠  DELTA_DB_URL not set – using FileSystemFallback (dev shim).\n' +
+        '  Start DeltaDatabase:\n' +
+        '    docker run -d -p 8080:8080 -e ADMIN_KEY=changeme -v delta_data:/shared/db \\\n' +
+        '      donti/deltadatabase:latest-aio\n' +
+        '  Then set DELTA_DB_URL=http://127.0.0.1:8080 and DELTA_DB_ADMIN_KEY=changeme'
       );
     }
   }
 
-  get mode() {
-    return this._mode;
-  }
+  /** "deltadatabase" | "filesystem" */
+  get mode() { return this._mode; }
 
-  // ── Chats ──────────────────────────────────────────────────────────────────
+  // ── Chats ───────────────────────────────────────────────────────────────────
 
-  createChat(doc) {
-    return this._backend.insert('chats', doc);
-  }
+  createChat(doc)          { return this._backend.insert('chats', doc); }
+  listChats()              { return this._backend.findAll('chats'); }
+  getChat(id)              { return this._backend.findById('chats', id); }
+  updateChat(id, fields)   { return this._backend.update('chats', id, fields); }
+  deleteChat(id)           { return this._backend.delete('chats', id); }
 
-  listChats() {
-    return this._backend.findAll('chats');
-  }
-
-  getChat(id) {
-    return this._backend.findById('chats', id);
-  }
-
-  updateChat(id, fields) {
-    return this._backend.update('chats', id, fields);
-  }
-
-  deleteChat(id) {
-    return this._backend.delete('chats', id);
-  }
-
-  // ── Messages ───────────────────────────────────────────────────────────────
+  // ── Messages ────────────────────────────────────────────────────────────────
 
   createMessage(doc) {
-    return this._backend.insert('messages', doc);
+    return this._backend.insert('messages', doc, ['chatId']);
   }
 
   listMessages(chatId) {
     return this._backend.query('messages', { chatId });
   }
 
-  getMessage(id) {
-    return this._backend.findById('messages', id);
+  getMessage(id)             { return this._backend.findById('messages', id); }
+  updateMessage(id, fields)  { return this._backend.update('messages', id, fields); }
+
+  async deleteMessage(id) {
+    const msg = await this._backend.findById('messages', id);
+    return this._backend.delete(
+      'messages', id,
+      msg ? [{ field: 'chatId', value: msg.chatId }] : []
+    );
   }
 
-  updateMessage(id, fields) {
-    return this._backend.update('messages', id, fields);
+  async deleteMessagesByChatId(chatId) {
+    const msgs = await this.listMessages(chatId);
+    for (const m of msgs) {
+      await this._backend.delete('messages', m.id, [{ field: 'chatId', value: chatId }]);
+    }
+    return { ok: true };
   }
 
-  deleteMessage(id) {
-    return this._backend.delete('messages', id);
-  }
+  // ── Knowledge Stores ────────────────────────────────────────────────────────
 
-  deleteMessagesByChatId(chatId) {
-    return this._backend.query('messages', { chatId }).then(async (msgs) => {
-      for (const m of msgs) await this._backend.delete('messages', m.id);
-      return { ok: true };
-    });
-  }
+  createKnowledgeStore(doc)        { return this._backend.insert('knowledge_stores', doc); }
+  listKnowledgeStores()            { return this._backend.findAll('knowledge_stores'); }
+  getKnowledgeStore(id)            { return this._backend.findById('knowledge_stores', id); }
+  updateKnowledgeStore(id, fields) { return this._backend.update('knowledge_stores', id, fields); }
+  deleteKnowledgeStore(id)         { return this._backend.delete('knowledge_stores', id); }
 
-  // ── Knowledge Stores ───────────────────────────────────────────────────────
-
-  createKnowledgeStore(doc) {
-    return this._backend.insert('knowledge_stores', doc);
-  }
-
-  listKnowledgeStores() {
-    return this._backend.findAll('knowledge_stores');
-  }
-
-  getKnowledgeStore(id) {
-    return this._backend.findById('knowledge_stores', id);
-  }
-
-  updateKnowledgeStore(id, fields) {
-    return this._backend.update('knowledge_stores', id, fields);
-  }
-
-  deleteKnowledgeStore(id) {
-    return this._backend.delete('knowledge_stores', id);
-  }
-
-  // ── Documents ──────────────────────────────────────────────────────────────
+  // ── Documents ───────────────────────────────────────────────────────────────
 
   createDocument(doc) {
-    return this._backend.insert('documents', doc);
+    return this._backend.insert('documents', doc, ['knowledgeStoreId']);
   }
 
   listDocuments(knowledgeStoreId) {
     return this._backend.query('documents', { knowledgeStoreId });
   }
 
-  getDocument(id) {
-    return this._backend.findById('documents', id);
+  getDocument(id)             { return this._backend.findById('documents', id); }
+  updateDocument(id, fields)  { return this._backend.update('documents', id, fields); }
+
+  async deleteDocument(id) {
+    const doc = await this._backend.findById('documents', id);
+    return this._backend.delete(
+      'documents', id,
+      doc ? [{ field: 'knowledgeStoreId', value: doc.knowledgeStoreId }] : []
+    );
   }
 
-  updateDocument(id, fields) {
-    return this._backend.update('documents', id, fields);
-  }
+  // ── Webhooks ────────────────────────────────────────────────────────────────
 
-  deleteDocument(id) {
-    return this._backend.delete('documents', id);
-  }
+  createWebhook(doc)          { return this._backend.insert('webhooks', doc); }
+  listWebhooks()              { return this._backend.findAll('webhooks'); }
+  getWebhook(id)              { return this._backend.findById('webhooks', id); }
+  updateWebhook(id, fields)   { return this._backend.update('webhooks', id, fields); }
+  deleteWebhook(id)           { return this._backend.delete('webhooks', id); }
 
-  // ── Webhooks ───────────────────────────────────────────────────────────────
-
-  createWebhook(doc) {
-    return this._backend.insert('webhooks', doc);
-  }
-
-  listWebhooks() {
-    return this._backend.findAll('webhooks');
-  }
-
-  getWebhook(id) {
-    return this._backend.findById('webhooks', id);
-  }
-
-  updateWebhook(id, fields) {
-    return this._backend.update('webhooks', id, fields);
-  }
-
-  deleteWebhook(id) {
-    return this._backend.delete('webhooks', id);
-  }
-
-  // ── Settings ───────────────────────────────────────────────────────────────
+  // ── Settings ─────────────────────────────────────────────────────────────────
 
   async getSettings() {
-    const all = await this._backend.findAll('settings');
-    // Settings are stored as a single document with id="global"
-    return all.find((s) => s.id === 'global') || { id: 'global' };
+    return (await this._backend.findById('settings', 'global')) || { id: 'global' };
   }
 
   async updateSettings(fields) {
@@ -311,11 +445,10 @@ class DeltaDatabaseAdapter {
 }
 
 // Singleton
-let instance = null;
-
+let _instance = null;
 function getAdapter() {
-  if (!instance) instance = new DeltaDatabaseAdapter();
-  return instance;
+  if (!_instance) _instance = new DeltaDatabaseAdapter();
+  return _instance;
 }
 
-module.exports = { DeltaDatabaseAdapter, getAdapter };
+module.exports = { DeltaDatabaseAdapter, DeltaDatabaseClient, FileSystemFallback, getAdapter };
