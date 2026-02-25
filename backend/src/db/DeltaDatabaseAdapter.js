@@ -6,12 +6,12 @@
  * Wraps the DeltaDatabase REST API (https://github.com/DeltaRule/DeltaDatabase).
  * Run DeltaDatabase with Docker:
  *
- *   docker run -d -p 8080:8080 -e ADMIN_KEY=changeme -v delta_data:/shared/db \
+ *   docker run -d -p 8080:8080 -e ADMIN_KEY=mysecretadminkey -v delta_data:/shared/db \
  *     donti/deltadatabase:latest-aio
  *
- * Configure via environment variables:
- *   DELTA_DB_URL        Base URL of the DeltaDatabase instance  (default: http://127.0.0.1:8080)
- *   DELTA_DB_ADMIN_KEY  Admin key for authentication
+ * Configure via environment variables (all required):
+ *   DELTA_DB_URL        Base URL of the DeltaDatabase instance  (e.g. http://127.0.0.1:8080)
+ *   DELTA_DB_ADMIN_KEY  Admin key for authentication            (matches ADMIN_KEY in container)
  *   DELTA_DB_DATABASE   Database (namespace) name               (default: deltachat)
  *
  * ── Storage design ───────────────────────────────────────────────────────────
@@ -27,15 +27,8 @@
  *
  * Deletions are soft: the entity is marked { _deleted: true } and its ID is
  * pruned from every index it appeared in.
- *
- * ── Fallback ─────────────────────────────────────────────────────────────────
- * When DELTA_DB_URL is not set the adapter uses FileSystemFallback – a local
- * JSON-file shim for development without Docker.
- * ⚠  FileSystemFallback is NOT for production use.
  */
 
-const fs   = require('fs');
-const path = require('path');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../config');
@@ -254,106 +247,30 @@ class DeltaDatabaseClient {
   }
 }
 
-// ── FileSystemFallback ────────────────────────────────────────────────────────
-
-/**
- * ⚠  DEVELOPMENT SHIM — do NOT use in production.
- * Mirrors the DeltaDatabaseClient interface using local JSON files.
- */
-class FileSystemFallback {
-  constructor(dataDir) {
-    this.dataDir = dataDir;
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  _filePath(collection) {
-    return path.join(this.dataDir, `${collection}.json`);
-  }
-
-  _read(collection) {
-    const fp = this._filePath(collection);
-    if (!fs.existsSync(fp)) return {};
-    try { return JSON.parse(fs.readFileSync(fp, 'utf8')); } catch { return {}; }
-  }
-
-  _write(collection, data) {
-    fs.writeFileSync(this._filePath(collection), JSON.stringify(data, null, 2));
-  }
-
-  async insert(collection, doc, _secondaryIndexFields = []) {
-    const store  = this._read(collection);
-    const now    = new Date().toISOString();
-    const id     = doc.id || uuidv4();
-    const entity = { ...doc, id, createdAt: doc.createdAt || now, updatedAt: now };
-    store[id] = entity;
-    this._write(collection, store);
-    return entity;
-  }
-
-  async findAll(collection) {
-    return Object.values(this._read(collection)).filter((d) => !d._deleted);
-  }
-
-  async findById(collection, id) {
-    const doc = this._read(collection)[id];
-    return doc && !doc._deleted ? doc : null;
-  }
-
-  async update(collection, id, fields) {
-    const store = this._read(collection);
-    if (!store[id] || store[id]._deleted) return null;
-    store[id] = { ...store[id], ...fields, id, updatedAt: new Date().toISOString() };
-    this._write(collection, store);
-    return store[id];
-  }
-
-  async delete(collection, id, _secondaryIndexes = []) {
-    const store = this._read(collection);
-    if (!store[id]) return { ok: false };
-    store[id] = { ...store[id], _deleted: true, updatedAt: new Date().toISOString() };
-    this._write(collection, store);
-    return { ok: true };
-  }
-
-  async query(collection, filter = {}, limit = 100) {
-    let docs = await this.findAll(collection);
-    for (const [k, v] of Object.entries(filter)) {
-      docs = docs.filter((d) => d[k] === v);
-    }
-    return docs.slice(0, limit);
-  }
-}
-
 // ── DeltaDatabaseAdapter ──────────────────────────────────────────────────────
 
 class DeltaDatabaseAdapter {
   constructor() {
-    if (config.deltaDb.url) {
-      this._backend = new DeltaDatabaseClient(
-        config.deltaDb.url,
-        config.deltaDb.adminKey,
-        config.deltaDb.database
-      );
-      this._mode = 'deltadatabase';
-      console.log(
-        `[DeltaDB] Connected to DeltaDatabase at ${config.deltaDb.url}` +
-        ` (database: "${config.deltaDb.database}")`
-      );
-    } else {
-      this._backend = new FileSystemFallback(config.deltaDb.dataDir);
-      this._mode    = 'filesystem';
-      console.warn(
-        '[DeltaDB] ⚠  DELTA_DB_URL not set – using FileSystemFallback (dev shim).\n' +
-        '  Start DeltaDatabase:\n' +
-        '    docker run -d -p 8080:8080 -e ADMIN_KEY=changeme -v delta_data:/shared/db \\\n' +
-        '      donti/deltadatabase:latest-aio\n' +
-        '  Then set DELTA_DB_URL=http://127.0.0.1:8080 and DELTA_DB_ADMIN_KEY=changeme'
+    if (!config.deltaDb.url) {
+      throw new Error(
+        '[DeltaDB] DELTA_DB_URL is required. Start DeltaDatabase with:\n' +
+        '  docker run -d -p 8080:8080 -e ADMIN_KEY=mysecretadminkey -v delta_data:/shared/db \\\n' +
+        '    donti/deltadatabase:latest-aio\n' +
+        '  Then set DELTA_DB_URL=http://127.0.0.1:8080 and DELTA_DB_ADMIN_KEY=mysecretadminkey'
       );
     }
+    this._backend = new DeltaDatabaseClient(
+      config.deltaDb.url,
+      config.deltaDb.adminKey,
+      config.deltaDb.database
+    );
+    console.log(
+      `[DeltaDB] Connected to DeltaDatabase at ${config.deltaDb.url}` +
+      ` (database: "${config.deltaDb.database}")`
+    );
   }
 
-  /** "deltadatabase" | "filesystem" */
-  get mode() { return this._mode; }
+  get mode() { return 'deltadatabase'; }
 
   // ── Chats ───────────────────────────────────────────────────────────────────
 
@@ -451,4 +368,4 @@ function getAdapter() {
   return _instance;
 }
 
-module.exports = { DeltaDatabaseAdapter, DeltaDatabaseClient, FileSystemFallback, getAdapter };
+module.exports = { DeltaDatabaseAdapter, DeltaDatabaseClient, getAdapter };

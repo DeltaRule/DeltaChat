@@ -101,7 +101,7 @@ Navigate to **http://localhost** in your browser.
 
 ```bash
 # DeltaDatabase
-docker run -d -p 8080:8080 -e ADMIN_KEY=changeme -v delta_data:/shared/db \
+docker run -d -p 8080:8080 -e ADMIN_KEY=mysecretadminkey -v delta_data:/shared/db \
   donti/deltadatabase:latest-aio
 
 # ChromaDB
@@ -116,7 +116,7 @@ docker run -d -p 9998:9998 apache/tika:latest-full
 ```bash
 cd backend
 cp .env.example .env
-# Set DELTA_DB_URL=http://127.0.0.1:8080 and DELTA_DB_ADMIN_KEY=changeme
+# Set DELTA_DB_URL=http://127.0.0.1:8080 and DELTA_DB_ADMIN_KEY=mysecretadminkey
 npm install
 npm run dev
 ```
@@ -145,6 +145,19 @@ GET /entity/{database}?key={k}             # fetch by key
 POST /api/login          { key: adminKey } # get Bearer token
 ```
 
+Start DeltaDatabase with Docker:
+
+```bash
+docker run -d \
+  --name deltadatabase \
+  -p 8080:8080 \
+  -e ADMIN_KEY=mysecretadminkey \
+  -v delta_data:/shared/db \
+  donti/deltadatabase:latest-aio
+```
+
+> ⚠ `DELTA_DB_URL` is **required** — the application will not start without it.
+
 Since DeltaDatabase has no native list/delete/query, the adapter (`backend/src/db/DeltaDatabaseAdapter.js`) maintains:
 
 - **Master index** (`{col}:_index`) — list of all entity IDs per collection
@@ -161,12 +174,6 @@ Since DeltaDatabase has no native list/delete/query, the adapter (`backend/src/d
 | `documents` | `documents:{id}` | `documents:_idx:knowledgeStoreId:{id}` |
 | `webhooks` | `webhooks:{id}` | — |
 | `settings` | `settings:global` | — |
-
-### Fallback mode (development)
-
-When `DELTA_DB_URL` is not set the adapter falls back to a JSON-file shim
-(`FileSystemFallback`) that stores data under `./data/`.  
-⚠ This is for **development only** — never use in production.
 
 ---
 
@@ -262,7 +269,7 @@ DeltaChat/
 │       ├── app.js               # Express app
 │       ├── config/index.js      # Config from env vars
 │       ├── db/
-│       │   └── DeltaDatabaseAdapter.js  # DeltaDatabase client + fallback
+│       │   └── DeltaDatabaseAdapter.js  # DeltaDatabase client + CRUD adapter
 │       ├── modules/
 │       │   ├── ModelProvider/
 │       │   ├── EmbeddingProvider/
