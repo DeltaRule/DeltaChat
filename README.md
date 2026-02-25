@@ -17,6 +17,22 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 
 ---
 
+## Screenshots
+
+### Chat View — dark theme
+![Chat – dark](docs/screenshots/chat.png)
+
+### Chat View — light theme
+![Chat – light](docs/screenshots/chat-light.png)
+
+### Knowledge Stores
+![Knowledge Stores](docs/screenshots/knowledge.png)
+
+### Settings
+![Settings](docs/screenshots/settings.png)
+
+---
+
 ## Architecture
 
 ```
@@ -101,7 +117,7 @@ Navigate to **http://localhost** in your browser.
 
 ```bash
 # DeltaDatabase
-docker run -d -p 8080:8080 -e ADMIN_KEY=mysecretadminkey -v delta_data:/shared/db \
+docker run -d --name deltadatabase -p 8080:8080 -e ADMIN_KEY=secretkey \
   donti/deltadatabase:latest-aio
 
 # ChromaDB
