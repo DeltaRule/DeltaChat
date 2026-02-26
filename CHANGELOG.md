@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Welcome screen** – when no chat is active, the main area now shows a large Δ logo, a greeting heading, and a subtitle. Typing a message and pressing Enter automatically creates a new chat and sends the message without any dialog.
 - **`ai_models` collection** – named model configurations that users select when starting a chat. Each config stores display name, type (`model`|`webhook`|`agent`), provider, provider model, system prompt, temperature, max tokens, linked knowledge stores, and linked tools.
 - **`agents` collection** – reusable agent definitions with system prompt, provider, knowledge stores (each auto-gains a `retrieve()` tool), and tools.
 - **`tools` collection** – tool definitions of type `mcp`, `python`, or `typescript`, each with a JSON config blob.
@@ -24,7 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   3. **Knowledge Stores** – manage stores and upload documents (moved from its own top-level page).
   4. **Agents** – define agents with system prompts, knowledge stores, and tools.
   5. **Tools** – add MCP servers, Python, or TypeScript function tools.
-- **Chat sidebar** now has All / Saved filter tabs and folder groups (expandable `v-list-group` per folder name).
+- **Sidebar redesigned** – collapsed rail shows **only** the Δ logo avatar (click it to expand); expanded sidebar shows Δ logo + "DeltaChat" text + a collapse chevron. There is no visible chevron when collapsed.
+- **Sidebar nav item** – single item that shows `+` icon when collapsed and "New Chat" label when expanded. Clicking it clears the current chat and returns to the welcome screen.
 - **Model selector in chat** now shows named model configs (from `/api/models`) instead of raw provider model strings.
 - **New Chat dialog** supports optional folder assignment.
 - Inline bookmark button on each chat list item.
@@ -32,7 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Knowledge Stores removed from the main left navigation (it lives in Settings now).
 
 ### Changed
-- `ChatInterface.vue` – chat store `createChat()` now accepts `(title, modelId, folder)` instead of `(name, model)`.
+- `ChatInterface.vue` – input area is always visible (not hidden when no chat is selected); `sendMessage()` auto-creates a chat when `currentChatId` is null; toolbar model selector always visible on desktop.
+- `AppNavigation.vue` – sidebar nav item changed from `mdi-chat / Chat` to `mdi-plus / New Chat`; collapsed rail shows only the logo, no chevron button.
 - `AppNavigation.vue` – sidebar only shows the Chat workspace icon; Knowledge is accessible via Settings.
 - `router/index.js` – removed `/knowledge` route; only `/` and `/settings` remain.
 - `chat.js` store – `loadMessages` now calls `GET /api/chats/:id` and reads `.messages` from the response (fixing the previous 404 on a non-existent `/messages` sub-path).

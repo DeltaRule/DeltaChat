@@ -151,12 +151,11 @@
             @blur="updateChatTitle"
             style="max-width: 180px"
           />
-          <span v-else class="text-body-2 text-disabled">Select or create a chat</span>
+          <span v-else class="text-body-2 text-disabled">New Conversation</span>
         </v-toolbar-title>
         <v-spacer />
-        <!-- Named model selector (desktop) -->
+        <!-- Named model selector (desktop) — always visible -->
         <v-select
-          v-if="currentChat"
           v-model="selectedModelId"
           :items="modelItems"
           item-title="name"
@@ -188,6 +187,20 @@
             </v-card>
           </div>
         </template>
+        <!-- Welcome greeting when no chat is active and no messages -->
+        <div
+          v-else-if="!chatStore.currentChatId"
+          class="welcome-screen"
+        >
+          <v-avatar color="primary" size="72" rounded="lg" class="mb-5">
+            <v-icon icon="mdi-delta" size="44" color="white" />
+          </v-avatar>
+          <h1 class="text-h5 font-weight-bold mb-2">Welcome to DeltaChat</h1>
+          <p class="text-body-2 text-disabled">
+            Type a message below to start a new conversation.
+          </p>
+        </div>
+        <!-- Empty chat: has a chat selected but no messages -->
         <div
           v-else
           class="d-flex align-center justify-center text-disabled"
@@ -195,20 +208,16 @@
         >
           <div class="text-center">
             <v-icon icon="mdi-chat-outline" size="64" class="mb-4 text-medium-emphasis" />
-            <div class="text-h6 text-medium-emphasis">
-              {{ chatStore.currentChatId ? 'No messages yet' : 'Select or create a chat' }}
-            </div>
-            <div v-if="!chatStore.currentChatId" class="text-body-2 text-disabled mt-2">
-              Use the <strong>New Chat</strong> button to get started
-            </div>
+            <div class="text-h6 text-medium-emphasis">No messages yet</div>
+            <div class="text-body-2 text-disabled mt-2">Say something to get started</div>
           </div>
         </div>
       </div>
 
-      <!-- Input area -->
-      <v-sheet v-if="chatStore.currentChatId" class="chat-input" border="t" color="surface">
+      <!-- Input area — always visible -->
+      <v-sheet class="chat-input" border="t" color="surface">
         <!-- Mobile: model selector above input -->
-        <div v-if="mobile && currentChat" class="mb-2">
+        <div v-if="mobile" class="mb-2">
           <v-select
             v-model="selectedModelId"
             :items="modelItems"
@@ -377,9 +386,16 @@ async function sendMessage() {
   if (!inputMessage.value.trim() || chatStore.streaming) return
   const content = inputMessage.value.trim()
   inputMessage.value = ''
-  chatStore.streamMessage(chatStore.currentChatId, content, {
-    modelId: selectedModelId.value
-  })
+
+  // If no chat is selected, auto-create one first
+  let chatId = chatStore.currentChatId
+  if (!chatId) {
+    const chat = await chatStore.createChat('', selectedModelId.value, null)
+    chatId = chat.id
+    chatStore.currentChatId = chatId
+  }
+
+  chatStore.streamMessage(chatId, content, { modelId: selectedModelId.value })
 }
 
 async function updateChatTitle() {
@@ -447,6 +463,18 @@ onMounted(async () => {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.welcome-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 16px;
 }
 
 .chat-input {
