@@ -8,8 +8,11 @@
 
     <v-app-bar elevation="2" density="compact">
       <v-app-bar-nav-icon @click="toggleDrawer" />
-      <v-app-bar-title class="font-weight-bold text-body-1">
-        <v-icon icon="mdi-delta" size="small" class="mr-1" />
+      <!-- Only show brand in app bar when sidebar is collapsed or on mobile -->
+      <v-app-bar-title v-if="rail || mobile" class="font-weight-bold text-body-1">
+        <v-avatar color="primary" size="26" rounded="sm" class="mr-2" style="flex-shrink:0">
+          <v-icon icon="mdi-delta" size="15" color="white" />
+        </v-avatar>
         DeltaChat
       </v-app-bar-title>
       <v-spacer />

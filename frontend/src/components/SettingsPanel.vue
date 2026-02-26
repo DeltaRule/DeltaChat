@@ -27,10 +27,21 @@
         <v-row>
           <v-col v-for="provider in providers" :key="provider.key" cols="12" sm="6">
             <v-card elevation="1">
-              <v-card-title class="d-flex align-center py-3">
-                <span class="text-body-1 font-weight-bold">{{ provider.name }}</span>
-                <v-spacer />
-                <v-switch v-model="providerEnabled[provider.key]" hide-details density="compact" color="primary" />
+              <v-card-title class="d-flex align-center py-3 px-4">
+                <v-avatar
+                  :color="provider.iconColor + ICON_BG_ALPHA"
+                  size="36"
+                  rounded="sm"
+                  class="mr-3"
+                  style="flex-shrink:0"
+                >
+                  <v-icon :icon="provider.icon" :color="provider.iconColor" size="20" />
+                </v-avatar>
+                <div class="flex-grow-1 min-width-0">
+                  <div class="text-body-1 font-weight-bold">{{ provider.name }}</div>
+                  <div class="text-caption text-disabled text-truncate">{{ provider.description }}</div>
+                </div>
+                <v-switch v-model="providerEnabled[provider.key]" hide-details density="compact" color="primary" class="ml-2 flex-shrink-0" />
               </v-card-title>
               <v-divider v-if="providerEnabled[provider.key]" />
               <v-card-text v-if="providerEnabled[provider.key]" class="pt-3">
@@ -81,7 +92,19 @@
           Models are named configurations that users chat with. Each model references a provider, an optional
           system prompt, knowledge stores, and tools.
         </p>
-        <v-card elevation="1">
+        <!-- Empty state -->
+        <div v-if="!modelsStore.aiModels.length" class="d-flex flex-column align-center justify-center py-14 text-center">
+          <v-icon icon="mdi-brain" size="72" class="mb-4" style="opacity:0.25" />
+          <div class="text-h6 mb-2">No models yet</div>
+          <div class="text-body-2 text-disabled mb-6" style="max-width:340px">
+            Create a named model configuration — each model can reference a provider,
+            system prompt, knowledge stores and tools.
+          </div>
+          <v-btn color="primary" prepend-icon="mdi-plus" variant="tonal" @click="openModelDialog()">
+            Add First Model
+          </v-btn>
+        </div>
+        <v-card v-else elevation="1">
           <v-list density="compact">
             <v-list-item
               v-for="m in modelsStore.aiModels"
@@ -107,9 +130,6 @@
                 <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="modelsStore.deleteModel(m.id)" />
               </template>
             </v-list-item>
-            <v-list-item v-if="!modelsStore.aiModels.length">
-              <v-list-item-subtitle class="text-center py-4">No models configured yet</v-list-item-subtitle>
-            </v-list-item>
           </v-list>
         </v-card>
       </template>
@@ -125,7 +145,18 @@
         </div>
         <v-row>
           <v-col cols="12" md="4">
-            <v-card elevation="1">
+            <!-- Empty state for left panel when no stores exist -->
+            <div v-if="!knowledgeStore.knowledgeStores.length"
+              class="d-flex flex-column align-center justify-center py-10 text-center"
+              style="border: 1px dashed rgba(var(--v-border-color), var(--v-border-opacity)); border-radius: 8px;"
+            >
+              <v-icon icon="mdi-database-outline" size="48" class="mb-3" style="opacity:0.3" />
+              <div class="text-body-2 text-disabled mb-3">No knowledge stores yet</div>
+              <v-btn color="primary" size="small" variant="tonal" prepend-icon="mdi-plus" @click="showCreateKs = true">
+                Create Store
+              </v-btn>
+            </div>
+            <v-card v-else elevation="1">
               <v-list density="compact">
                 <v-list-item
                   v-for="ks in knowledgeStore.knowledgeStores"
@@ -143,9 +174,6 @@
                   <template #append>
                     <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="knowledgeStore.deleteKnowledgeStore(ks.id)" />
                   </template>
-                </v-list-item>
-                <v-list-item v-if="!knowledgeStore.knowledgeStores.length">
-                  <v-list-item-subtitle class="text-center py-4">No stores yet</v-list-item-subtitle>
                 </v-list-item>
               </v-list>
             </v-card>
@@ -181,11 +209,12 @@
                 <div v-else class="text-center text-disabled py-4">No documents uploaded yet</div>
               </v-card-text>
             </v-card>
-            <div v-else class="d-flex align-center justify-center text-disabled" style="min-height: 200px;">
-              <div class="text-center">
-                <v-icon icon="mdi-database-outline" size="48" class="mb-2" />
-                <div class="text-body-2">Select a knowledge store</div>
-              </div>
+            <!-- Right-panel placeholder when no store selected -->
+            <div v-else class="d-flex flex-column align-center justify-center text-center py-16"
+              style="border: 1px dashed rgba(var(--v-border-color), var(--v-border-opacity)); border-radius: 8px; min-height: 240px;"
+            >
+              <v-icon icon="mdi-arrow-left-circle-outline" size="40" class="mb-3" style="opacity:0.3" />
+              <div class="text-body-2 text-disabled">{{ ksRightPanelHint }}</div>
             </div>
           </v-col>
         </v-row>
@@ -203,7 +232,18 @@
         <p class="text-body-2 text-disabled mb-4">
           Agents combine a system prompt, knowledge stores, and tools. Add an agent as a Model so users can chat with it.
         </p>
-        <v-card elevation="1">
+        <!-- Empty state -->
+        <div v-if="!agentsStore.agents.length" class="d-flex flex-column align-center justify-center py-14 text-center">
+          <v-icon icon="mdi-robot-outline" size="72" class="mb-4" style="opacity:0.25" />
+          <div class="text-h6 mb-2">No agents yet</div>
+          <div class="text-body-2 text-disabled mb-6" style="max-width:340px">
+            Agents combine a system prompt, tools, and knowledge stores into a reusable AI persona.
+          </div>
+          <v-btn color="primary" prepend-icon="mdi-plus" variant="tonal" @click="openAgentDialog()">
+            Add First Agent
+          </v-btn>
+        </div>
+        <v-card v-else elevation="1">
           <v-list density="compact">
             <v-list-item
               v-for="agent in agentsStore.agents"
@@ -228,9 +268,6 @@
                 <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="agentsStore.deleteAgent(agent.id)" />
               </template>
             </v-list-item>
-            <v-list-item v-if="!agentsStore.agents.length">
-              <v-list-item-subtitle class="text-center py-4">No agents defined yet</v-list-item-subtitle>
-            </v-list-item>
           </v-list>
         </v-card>
       </template>
@@ -247,7 +284,18 @@
         <p class="text-body-2 text-disabled mb-4">
           Connect tools via MCP, or define custom Python / TypeScript functions in the specified format.
         </p>
-        <v-card elevation="1">
+        <!-- Empty state -->
+        <div v-if="!toolsStore.tools.length" class="d-flex flex-column align-center justify-center py-14 text-center">
+          <v-icon icon="mdi-tools" size="72" class="mb-4" style="opacity:0.25" />
+          <div class="text-h6 mb-2">No tools yet</div>
+          <div class="text-body-2 text-disabled mb-6" style="max-width:340px">
+            Add MCP tool servers or define custom Python / TypeScript functions to extend AI capabilities.
+          </div>
+          <v-btn color="primary" prepend-icon="mdi-plus" variant="tonal" @click="openToolDialog()">
+            Add First Tool
+          </v-btn>
+        </div>
+        <v-card v-else elevation="1">
           <v-list density="compact">
             <v-list-item
               v-for="tool in toolsStore.tools"
@@ -270,9 +318,6 @@
                 <v-btn icon="mdi-pencil" size="x-small" variant="text" @click.stop="openToolDialog(tool)" />
                 <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="toolsStore.deleteTool(tool.id)" />
               </template>
-            </v-list-item>
-            <v-list-item v-if="!toolsStore.tools.length">
-              <v-list-item-subtitle class="text-center py-4">No tools configured yet</v-list-item-subtitle>
             </v-list-item>
           </v-list>
         </v-card>
@@ -458,6 +503,16 @@ const agentItems = computed(() =>
   agentsStore.agents.map(a => ({ title: a.name, value: a.id }))
 )
 
+// Hint for the knowledge-store right panel when nothing is selected
+const ksRightPanelHint = computed(() =>
+  knowledgeStore.knowledgeStores.length
+    ? 'Select a store to manage its documents'
+    : 'Create a knowledge store first'
+)
+
+// 13 % opacity hex suffix for provider icon background tints
+const ICON_BG_ALPHA = '22'
+
 const activeTab = ref('providers')
 const saving = ref(false)
 
@@ -472,12 +527,12 @@ const tabs = [
 // ── Provider settings ───────────────────────────────────────────────────────
 
 const providers = [
-  { key: 'openai', name: 'OpenAI', keyLabel: 'API Key', hasModel: true },
-  { key: 'anthropic', name: 'Anthropic', keyLabel: 'API Key', hasModel: true },
-  { key: 'ollama', name: 'Ollama', keyLabel: 'API Key (optional)', hasUrl: true, urlLabel: 'Base URL', hasModel: true },
-  { key: 'groq', name: 'Groq', keyLabel: 'API Key', hasModel: true },
-  { key: 'gemini', name: 'Google Gemini', keyLabel: 'API Key', hasModel: true },
-  { key: 'azure', name: 'Azure OpenAI', keyLabel: 'API Key', hasUrl: true, urlLabel: 'Azure Endpoint', hasModel: true },
+  { key: 'openai', name: 'OpenAI', keyLabel: 'API Key', hasModel: true, icon: 'mdi-brain', iconColor: '#10a37f', description: 'GPT-4o, GPT-4, GPT-3.5 and more' },
+  { key: 'anthropic', name: 'Anthropic', keyLabel: 'API Key', hasModel: true, icon: 'mdi-robot-excited-outline', iconColor: '#d97706', description: 'Claude 3.5 Sonnet, Claude 3 Opus and more' },
+  { key: 'ollama', name: 'Ollama', keyLabel: 'API Key (optional)', hasUrl: true, urlLabel: 'Base URL', hasModel: true, icon: 'mdi-layers-triple', iconColor: '#0ea5e9', description: 'Run models locally, no API key needed' },
+  { key: 'groq', name: 'Groq', keyLabel: 'API Key', hasModel: true, icon: 'mdi-lightning-bolt', iconColor: '#f59e0b', description: 'Ultra-fast inference — Llama, Mixtral and more' },
+  { key: 'gemini', name: 'Google Gemini', keyLabel: 'API Key', hasModel: true, icon: 'mdi-google', iconColor: '#4285f4', description: 'Gemini 1.5 Pro, Flash and more' },
+  { key: 'azure', name: 'Azure OpenAI', keyLabel: 'API Key', hasUrl: true, urlLabel: 'Azure Endpoint', hasModel: true, icon: 'mdi-microsoft-azure', iconColor: '#0078d4', description: 'OpenAI models hosted on Microsoft Azure' },
 ]
 
 const providerEnabled = reactive({})

@@ -9,29 +9,32 @@
   >
     <!-- Expand/collapse toggle (desktop only) -->
     <template v-if="!mobile">
-      <div
-        class="d-flex align-center justify-space-between px-2"
-        style="min-height: 48px;"
-      >
+      <!-- Collapsed rail: logo avatar + expand button stacked -->
+      <div v-if="rail" class="d-flex flex-column align-center py-2" style="min-height: 56px; gap: 2px;">
+        <v-btn variant="plain" density="compact" :to="'/'" aria-label="DeltaChat Home" class="pa-0">
+          <v-avatar color="primary" size="28" rounded="sm">
+            <v-icon icon="mdi-delta" size="16" color="white" />
+          </v-avatar>
+        </v-btn>
         <v-btn
-          v-if="!rail"
-          icon="mdi-delta"
+          icon="mdi-chevron-right"
           variant="text"
-          size="small"
-          color="primary"
-          class="mr-1"
-          :to="'/'"
-          aria-label="Go to home page"
+          size="x-small"
+          aria-label="Expand sidebar"
+          @click="$emit('toggle-rail')"
         />
-        <span
-          v-if="!rail"
-          class="text-body-2 font-weight-bold text-primary flex-grow-1"
-        >DeltaChat</span>
+      </div>
+      <!-- Expanded: brand row + collapse button -->
+      <div v-else class="d-flex align-center justify-space-between px-2" style="min-height: 48px;">
+        <v-avatar color="primary" size="26" rounded="sm" class="mr-2">
+          <v-icon icon="mdi-delta" size="15" color="white" />
+        </v-avatar>
+        <span class="text-body-2 font-weight-bold flex-grow-1">DeltaChat</span>
         <v-btn
-          :icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
+          icon="mdi-chevron-left"
           variant="text"
           size="small"
-          :aria-label="rail ? 'Expand sidebar' : 'Collapse sidebar'"
+          aria-label="Collapse sidebar"
           @click="$emit('toggle-rail')"
         />
       </div>
