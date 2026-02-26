@@ -35,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Knowledge Stores removed from the main left navigation (it lives in Settings now).
 
 ### Changed
+- `ChatInterface.vue` – attachment button now sits **left of the send button** in a horizontal row (previously stacked vertically above the send button).
+- `SettingsPanel.vue` – settings left sidebar now supports collapsible rail mode matching the chat sidebar pattern: collapsed shows icons only (56 px) with a `›` chevron to expand; expanded shows icon + text (200 px) with a `‹` chevron to collapse; active tab is always highlighted.
 - `ChatInterface.vue` – internal `<aside class="chat-sidebar">` removed; component is now the chat area only (toolbar + messages + input). Input area always visible; `sendMessage()` auto-creates a chat when `currentChatId` is null; toolbar model selector always visible on desktop; `loadMessages` triggered by watching `currentChatId`.
 - `AppNavigation.vue` – takes over chat list responsibilities (search, filter, chat items, folder groups, bookmark/delete); collapsed rail shows `+` icon only; expanded shows full chat UI; clicking a chat item selects it and loads its messages.
 - `router/index.js` – removed `/knowledge` route; only `/` and `/settings` remain.

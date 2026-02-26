@@ -19,29 +19,23 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 
 ## Screenshots
 
-### Chat View — icon-only left rail, chat sidebar with All/Saved filter
+### Chat View — collapsed sidebar (logo + `+` icon only)
 ![Chat](docs/screenshots/chat.png)
 
-### Chat View — expanded left sidebar
+### Chat View — expanded sidebar (logo, New Chat button, search, chat list)
 ![Chat expanded](docs/screenshots/chat-expanded.png)
 
 ### Chat View — mobile
 ![Chat mobile](docs/screenshots/chat-mobile.png)
 
-### Settings — Model Providers
+### Settings — expanded sidebar (icon + text, active highlight)
 ![Settings – providers](docs/screenshots/settings.png)
+
+### Settings — collapsed sidebar (icons only with active indicator)
+![Settings – collapsed](docs/screenshots/settings-collapsed.png)
 
 ### Settings — Models (named configurations users chat with)
 ![Settings – models](docs/screenshots/settings-models.png)
-
-### Settings — Knowledge Stores
-![Settings – knowledge](docs/screenshots/settings-knowledge.png)
-
-### Settings — Agents
-![Settings – agents](docs/screenshots/settings-agents.png)
-
-### Settings — Tools
-![Settings – tools](docs/screenshots/settings-tools.png)
 
 ---
 

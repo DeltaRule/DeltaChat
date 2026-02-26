@@ -1,21 +1,51 @@
 <template>
   <div class="settings-layout">
-    <!-- Left sidebar tabs -->
-    <aside class="settings-nav">
-      <div class="settings-nav__title pa-3 text-caption text-uppercase text-disabled font-weight-bold">
-        Settings
+    <!-- Left sidebar — collapsible rail (same pattern as AppNavigation) -->
+    <aside class="settings-nav" :class="{ 'settings-nav--rail': settingsRail }">
+      <!-- Collapsed: single chevron-right to expand -->
+      <div v-if="settingsRail" class="d-flex justify-center align-center py-3">
+        <v-btn
+          icon="mdi-chevron-right"
+          variant="text"
+          size="small"
+          aria-label="Expand settings sidebar"
+          @click="settingsRail = false"
+        />
       </div>
-      <v-list density="compact" nav>
-        <v-list-item
+      <!-- Expanded: "Settings" title + collapse chevron -->
+      <div v-else class="d-flex align-center px-3" style="min-height: 48px;">
+        <v-icon icon="mdi-cog" size="18" class="mr-2" style="opacity:0.7;flex-shrink:0" />
+        <span class="text-body-2 font-weight-bold flex-grow-1">Settings</span>
+        <v-btn
+          icon="mdi-chevron-left"
+          variant="text"
+          size="small"
+          aria-label="Collapse settings sidebar"
+          @click="settingsRail = true"
+        />
+      </div>
+      <v-divider />
+
+      <v-list density="compact" nav class="mt-1">
+        <v-tooltip
           v-for="tab in tabs"
           :key="tab.value"
-          :prepend-icon="tab.icon"
-          :title="tab.label"
-          :active="activeTab === tab.value"
-          rounded="lg"
-          class="mb-1"
-          @click="activeTab = tab.value"
-        />
+          :text="tab.label"
+          location="right"
+          :disabled="!settingsRail"
+        >
+          <template #activator="{ props: tipProps }">
+            <v-list-item
+              v-bind="tipProps"
+              :prepend-icon="tab.icon"
+              :title="settingsRail ? undefined : tab.label"
+              :active="activeTab === tab.value"
+              rounded="lg"
+              class="mb-1"
+              @click="activeTab = tab.value"
+            />
+          </template>
+        </v-tooltip>
       </v-list>
     </aside>
 
@@ -515,6 +545,7 @@ const ICON_BG_ALPHA = '22'
 
 const activeTab = ref('providers')
 const saving = ref(false)
+const settingsRail = ref(false)
 
 const tabs = [
   { value: 'providers', label: 'Model Providers', icon: 'mdi-key' },
@@ -734,16 +765,26 @@ onMounted(async () => {
   overflow: hidden;
 }
 
+/* ── Settings sidebar ──────────────────────────── */
 .settings-nav {
   width: 200px;
   min-width: 200px;
   border-right: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   overflow-y: auto;
   background: rgb(var(--v-theme-surface));
+  transition: width 0.2s ease, min-width 0.2s ease;
+  flex-shrink: 0;
 }
 
-.settings-nav__title {
-  letter-spacing: 0.08em;
+/* Rail (collapsed) mode — icons only */
+.settings-nav--rail {
+  width: 56px;
+  min-width: 56px;
+}
+
+/* Hide list item title text when in rail mode */
+.settings-nav--rail :deep(.v-list-item__content) {
+  display: none;
 }
 
 .settings-content {
@@ -768,16 +809,5 @@ onMounted(async () => {
 .drop-zone.dragging {
   border-color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.05);
-}
-
-@media (max-width: 600px) {
-  .settings-nav {
-    width: 56px;
-    min-width: 56px;
-  }
-  .settings-nav .v-list-item__title,
-  .settings-nav__title {
-    display: none;
-  }
 }
 </style>

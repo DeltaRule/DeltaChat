@@ -105,7 +105,7 @@
               @keydown.enter.exact.prevent="sendMessage"
             />
           </v-col>
-          <v-col cols="auto" class="ml-2 d-flex flex-column" style="gap: 4px;">
+          <v-col cols="auto" class="ml-2 d-flex flex-row align-end" style="gap: 4px;">
             <v-btn
               icon="mdi-attachment"
               variant="text"
