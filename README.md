@@ -19,8 +19,11 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 
 ## Screenshots
 
-### Chat View — dark theme
-![Chat – dark](docs/screenshots/chat.png)
+### Chat View — icon-only sidebar (dark theme)
+![Chat – dark, rail sidebar](docs/screenshots/chat.png)
+
+### Chat View — expanded sidebar (dark theme)
+![Chat – dark, expanded sidebar](docs/screenshots/chat-expanded.png)
 
 ### Chat View — light theme
 ![Chat – light](docs/screenshots/chat-light.png)
@@ -30,6 +33,9 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 
 ### Settings
 ![Settings](docs/screenshots/settings.png)
+
+### Mobile View
+![Mobile](docs/screenshots/chat-mobile.png)
 
 ---
 
