@@ -19,9 +19,20 @@ export const useChatStore = defineStore('chat', () => {
     } catch (e) { console.error(e) }
   }
 
-  async function createChat(name, model) {
-    const { data } = await axios.post(`${API}/api/chats`, { name, model })
+  async function createChat(title, modelId, folder) {
+    const { data } = await axios.post(`${API}/api/chats`, {
+      title: title || '',
+      modelId: modelId || null,
+      folder: folder || null,
+    })
     chats.value.unshift(data)
+    return data
+  }
+
+  async function updateChat(id, fields) {
+    const { data } = await axios.patch(`${API}/api/chats/${id}`, fields)
+    const idx = chats.value.findIndex(c => c.id === id)
+    if (idx !== -1) chats.value[idx] = data
     return data
   }
 
@@ -33,8 +44,8 @@ export const useChatStore = defineStore('chat', () => {
 
   async function loadMessages(chatId) {
     try {
-      const { data } = await axios.get(`${API}/api/chats/${chatId}/messages`)
-      messages[chatId] = data
+      const { data } = await axios.get(`${API}/api/chats/${chatId}`)
+      messages[chatId] = data.messages || []
     } catch (e) { messages[chatId] = [] }
   }
 
@@ -63,5 +74,5 @@ export const useChatStore = defineStore('chat', () => {
     socket.on('chat:done', () => { streaming.value = false })
   }
 
-  return { chats, currentChatId, messages, streaming, loadChats, createChat, deleteChat, loadMessages, sendMessage, streamMessage }
+  return { chats, currentChatId, messages, streaming, loadChats, createChat, updateChat, deleteChat, loadMessages, sendMessage, streamMessage }
 })

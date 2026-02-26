@@ -1,35 +1,36 @@
 <template>
-  <v-container fluid class="pa-3 pa-md-4" style="max-width: 960px;">
-    <div class="d-flex align-center mb-4">
-      <v-icon icon="mdi-cog" class="mr-2" color="primary" />
-      <span class="text-h6 font-weight-bold">Settings</span>
-    </div>
+  <div class="settings-layout">
+    <!-- Left sidebar tabs -->
+    <aside class="settings-nav">
+      <div class="settings-nav__title pa-3 text-caption text-uppercase text-disabled font-weight-bold">
+        Settings
+      </div>
+      <v-list density="compact" nav>
+        <v-list-item
+          v-for="tab in tabs"
+          :key="tab.value"
+          :prepend-icon="tab.icon"
+          :title="tab.label"
+          :active="activeTab === tab.value"
+          rounded="lg"
+          class="mb-1"
+          @click="activeTab = tab.value"
+        />
+      </v-list>
+    </aside>
 
-    <v-tabs v-model="activeTab" color="primary" show-arrows>
-      <v-tab value="providers" prepend-icon="mdi-key">Providers</v-tab>
-      <v-tab value="embedding" prepend-icon="mdi-vector-combine">Embedding</v-tab>
-      <v-tab value="webhooks" prepend-icon="mdi-webhook">Webhooks</v-tab>
-      <v-tab value="mcp" prepend-icon="mdi-connection">MCP</v-tab>
-      <v-tab value="system" prepend-icon="mdi-tune">System</v-tab>
-    </v-tabs>
-
-    <v-divider class="mb-4" />
-
-    <v-tabs-window v-model="activeTab">
-      <!-- Providers -->
-      <v-tabs-window-item value="providers">
+    <!-- Right content area -->
+    <main class="settings-content">
+      <!-- ── Model Providers ─────────────────────────────── -->
+      <template v-if="activeTab === 'providers'">
+        <div class="settings-section-title">Model Providers</div>
         <v-row>
           <v-col v-for="provider in providers" :key="provider.key" cols="12" sm="6">
             <v-card elevation="1">
               <v-card-title class="d-flex align-center py-3">
                 <span class="text-body-1 font-weight-bold">{{ provider.name }}</span>
                 <v-spacer />
-                <v-switch
-                  v-model="providerEnabled[provider.key]"
-                  hide-details
-                  density="compact"
-                  color="primary"
-                />
+                <v-switch v-model="providerEnabled[provider.key]" hide-details density="compact" color="primary" />
               </v-card-title>
               <v-divider v-if="providerEnabled[provider.key]" />
               <v-card-text v-if="providerEnabled[provider.key]" class="pt-3">
@@ -62,230 +63,413 @@
             </v-card>
           </v-col>
         </v-row>
-        <v-btn
-          color="primary"
-          class="mt-4"
-          prepend-icon="mdi-content-save"
-          @click="saveProviderSettings"
-          :loading="saving"
-        >
+        <v-btn color="primary" class="mt-4" prepend-icon="mdi-content-save" @click="saveProviderSettings" :loading="saving">
           Save Providers
         </v-btn>
-      </v-tabs-window-item>
+      </template>
 
-      <!-- Embedding -->
-      <v-tabs-window-item value="embedding">
-        <v-card elevation="1" max-width="600">
-          <v-card-title class="py-3 text-body-1 font-weight-bold">Embedding Configuration</v-card-title>
-          <v-divider />
-          <v-card-text class="pt-4">
-            <v-select
-              v-model="localSettings.embeddingProvider"
-              :items="['openai', 'ollama', 'local']"
-              label="Embedding Provider"
-              variant="outlined"
-              class="mb-3"
-            />
-            <v-text-field
-              v-model="localSettings.embeddingModel"
-              label="Embedding Model"
-              variant="outlined"
-              class="mb-3"
-            />
-            <v-text-field
-              v-model="localSettings.embeddingDimensions"
-              label="Dimensions"
-              type="number"
-              variant="outlined"
-            />
-          </v-card-text>
-          <v-card-actions class="px-4 pb-4">
-            <v-btn
-              color="primary"
-              prepend-icon="mdi-content-save"
-              @click="saveAll"
-              :loading="saving"
-            >
-              Save
-            </v-btn>
-          </v-card-actions>
-        </v-card>
-      </v-tabs-window-item>
-
-      <!-- Webhooks -->
-      <v-tabs-window-item value="webhooks">
-        <v-card elevation="1" max-width="700">
-          <v-card-title class="d-flex align-center py-3">
-            <span class="text-body-1 font-weight-bold">Webhooks</span>
-            <v-spacer />
-            <v-btn
-              color="primary"
-              prepend-icon="mdi-plus"
-              size="small"
-              variant="tonal"
-              @click="showAddWebhook = true"
-            >
-              Add
-            </v-btn>
-          </v-card-title>
-          <v-divider />
+      <!-- ── Models ─────────────────────────────────────── -->
+      <template v-else-if="activeTab === 'models'">
+        <div class="settings-section-title d-flex align-center">
+          Models
+          <v-spacer />
+          <v-btn color="primary" prepend-icon="mdi-plus" size="small" variant="tonal" @click="openModelDialog()">
+            Add Model
+          </v-btn>
+        </div>
+        <p class="text-body-2 text-disabled mb-4">
+          Models are named configurations that users chat with. Each model references a provider, an optional
+          system prompt, knowledge stores, and tools.
+        </p>
+        <v-card elevation="1">
           <v-list density="compact">
             <v-list-item
-              v-for="wh in settingsStore.webhooks"
-              :key="wh.id"
-              :title="wh.name"
-              :subtitle="wh.url"
+              v-for="m in modelsStore.aiModels"
+              :key="m.id"
+              :title="m.name"
               rounded="lg"
               class="ma-1"
             >
+              <template #subtitle>
+                <span class="text-caption">
+                  {{ m.type === 'agent' ? 'Agent' : m.type === 'webhook' ? 'Webhook' : m.provider || 'No provider' }}
+                  <span v-if="m.providerModel"> · {{ m.providerModel }}</span>
+                </span>
+              </template>
               <template #prepend>
-                <v-icon icon="mdi-webhook" size="small" class="mr-1" />
+                <v-icon :icon="m.type === 'agent' ? 'mdi-robot' : m.type === 'webhook' ? 'mdi-webhook' : 'mdi-brain'" size="small" class="mr-1" />
               </template>
               <template #append>
-                <v-btn
-                  icon="mdi-delete"
-                  size="x-small"
-                  variant="text"
-                  color="error"
-                  @click="settingsStore.deleteWebhook(wh.id)"
-                />
+                <v-chip :color="m.enabled !== false ? 'success' : 'default'" size="x-small" class="mr-2">
+                  {{ m.enabled !== false ? 'Active' : 'Disabled' }}
+                </v-chip>
+                <v-btn icon="mdi-pencil" size="x-small" variant="text" @click.stop="openModelDialog(m)" />
+                <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="modelsStore.deleteModel(m.id)" />
               </template>
             </v-list-item>
-            <v-list-item v-if="!settingsStore.webhooks.length">
-              <v-list-item-subtitle class="text-center py-4">No webhooks configured</v-list-item-subtitle>
+            <v-list-item v-if="!modelsStore.aiModels.length">
+              <v-list-item-subtitle class="text-center py-4">No models configured yet</v-list-item-subtitle>
             </v-list-item>
           </v-list>
         </v-card>
-      </v-tabs-window-item>
+      </template>
 
-      <!-- MCP -->
-      <v-tabs-window-item value="mcp">
-        <v-card elevation="1" max-width="600">
-          <v-card-title class="py-3 text-body-1 font-weight-bold">MCP Server Configuration</v-card-title>
-          <v-divider />
-          <v-card-text class="pt-4">
-            <v-text-field
-              v-model="localSettings.mcpServerUrl"
-              label="MCP Server URL"
-              variant="outlined"
-              class="mb-3"
-              placeholder="http://localhost:8080"
-              prepend-inner-icon="mdi-server"
-            />
-            <v-switch
-              v-model="localSettings.mcpEnabled"
-              label="Enable MCP"
-              color="primary"
-              hide-details
-            />
-          </v-card-text>
-          <v-card-actions class="px-4 pb-4">
-            <v-btn
-              color="primary"
-              prepend-icon="mdi-content-save"
-              @click="saveAll"
-              :loading="saving"
+      <!-- ── Knowledge Stores ───────────────────────────── -->
+      <template v-else-if="activeTab === 'knowledge'">
+        <div class="settings-section-title d-flex align-center">
+          Knowledge Stores
+          <v-spacer />
+          <v-btn color="primary" prepend-icon="mdi-plus" size="small" variant="tonal" @click="showCreateKs = true">
+            New Store
+          </v-btn>
+        </div>
+        <v-row>
+          <v-col cols="12" md="4">
+            <v-card elevation="1">
+              <v-list density="compact">
+                <v-list-item
+                  v-for="ks in knowledgeStore.knowledgeStores"
+                  :key="ks.id"
+                  :title="ks.name"
+                  :subtitle="`${ks.documentCount || 0} documents`"
+                  :active="selectedKs?.id === ks.id"
+                  rounded="lg"
+                  class="ma-1"
+                  @click="selectKs(ks)"
+                >
+                  <template #prepend>
+                    <v-icon icon="mdi-database" size="small" />
+                  </template>
+                  <template #append>
+                    <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="knowledgeStore.deleteKnowledgeStore(ks.id)" />
+                  </template>
+                </v-list-item>
+                <v-list-item v-if="!knowledgeStore.knowledgeStores.length">
+                  <v-list-item-subtitle class="text-center py-4">No stores yet</v-list-item-subtitle>
+                </v-list-item>
+              </v-list>
+            </v-card>
+          </v-col>
+          <v-col cols="12" md="8">
+            <v-card v-if="selectedKs" elevation="1">
+              <v-card-title class="py-3 text-body-1 font-weight-bold">{{ selectedKs.name }}</v-card-title>
+              <v-divider />
+              <v-card-text>
+                <div
+                  class="drop-zone pa-6 text-center mb-4"
+                  :class="{ dragging: isDragging }"
+                  @dragover.prevent="isDragging = true"
+                  @dragleave="isDragging = false"
+                  @drop.prevent="handleDrop"
+                  @click="$refs.docInput.click()"
+                >
+                  <v-icon icon="mdi-cloud-upload" size="40" class="mb-2 text-medium-emphasis" />
+                  <div class="text-body-2">Drop files here or click to upload</div>
+                  <div class="text-caption text-disabled mt-1">PDF, TXT, MD, DOCX supported</div>
+                </div>
+                <input ref="docInput" type="file" multiple style="display:none" @change="handleFileSelect" />
+                <v-list v-if="ksDocs.length" density="compact">
+                  <v-list-item v-for="doc in ksDocs" :key="doc.id" :title="doc.name || doc.filename" rounded="lg" class="mb-1">
+                    <template #subtitle>
+                      <v-chip :color="statusColor(doc.status)" size="x-small" class="mt-1">{{ doc.status || 'ready' }}</v-chip>
+                    </template>
+                    <template #append>
+                      <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click="knowledgeStore.deleteDocument(selectedKs.id, doc.id)" />
+                    </template>
+                  </v-list-item>
+                </v-list>
+                <div v-else class="text-center text-disabled py-4">No documents uploaded yet</div>
+              </v-card-text>
+            </v-card>
+            <div v-else class="d-flex align-center justify-center text-disabled" style="min-height: 200px;">
+              <div class="text-center">
+                <v-icon icon="mdi-database-outline" size="48" class="mb-2" />
+                <div class="text-body-2">Select a knowledge store</div>
+              </div>
+            </div>
+          </v-col>
+        </v-row>
+      </template>
+
+      <!-- ── Agents ─────────────────────────────────────── -->
+      <template v-else-if="activeTab === 'agents'">
+        <div class="settings-section-title d-flex align-center">
+          Agents
+          <v-spacer />
+          <v-btn color="primary" prepend-icon="mdi-plus" size="small" variant="tonal" @click="openAgentDialog()">
+            Add Agent
+          </v-btn>
+        </div>
+        <p class="text-body-2 text-disabled mb-4">
+          Agents combine a system prompt, knowledge stores, and tools. Add an agent as a Model so users can chat with it.
+        </p>
+        <v-card elevation="1">
+          <v-list density="compact">
+            <v-list-item
+              v-for="agent in agentsStore.agents"
+              :key="agent.id"
+              :title="agent.name"
+              rounded="lg"
+              class="ma-1"
             >
-              Save
-            </v-btn>
-          </v-card-actions>
+              <template #subtitle>
+                <span class="text-caption">
+                  {{ agent.provider || 'No provider' }}
+                  <span v-if="agent.providerModel"> · {{ agent.providerModel }}</span>
+                  <span v-if="agent.knowledgeStoreIds?.length"> · {{ agent.knowledgeStoreIds.length }} KB</span>
+                  <span v-if="agent.toolIds?.length"> · {{ agent.toolIds.length }} tools</span>
+                </span>
+              </template>
+              <template #prepend>
+                <v-icon icon="mdi-robot" size="small" />
+              </template>
+              <template #append>
+                <v-btn icon="mdi-pencil" size="x-small" variant="text" @click.stop="openAgentDialog(agent)" />
+                <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="agentsStore.deleteAgent(agent.id)" />
+              </template>
+            </v-list-item>
+            <v-list-item v-if="!agentsStore.agents.length">
+              <v-list-item-subtitle class="text-center py-4">No agents defined yet</v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
         </v-card>
-      </v-tabs-window-item>
+      </template>
 
-      <!-- System -->
-      <v-tabs-window-item value="system">
-        <v-card elevation="1" max-width="600">
-          <v-card-title class="py-3 text-body-1 font-weight-bold">System Settings</v-card-title>
-          <v-divider />
-          <v-card-text class="pt-4">
-            <v-textarea
-              v-model="localSettings.systemPrompt"
-              label="System Prompt"
-              variant="outlined"
-              rows="4"
-              auto-grow
-              class="mb-3"
-              placeholder="You are a helpful assistant…"
-            />
-            <v-text-field
-              v-model="localSettings.maxTokens"
-              label="Max Tokens"
-              type="number"
-              variant="outlined"
-              class="mb-3"
-            />
-            <v-label class="text-caption mb-1">Temperature: {{ localSettings.temperature }}</v-label>
-            <v-slider
-              v-model="localSettings.temperature"
-              label="Temperature"
-              min="0"
-              max="2"
-              step="0.1"
-              thumb-label
-              color="primary"
-              class="mb-3"
-            />
-          </v-card-text>
-          <v-card-actions class="px-4 pb-4">
-            <v-btn
-              color="primary"
-              prepend-icon="mdi-content-save"
-              @click="saveAll"
-              :loading="saving"
+      <!-- ── Tools ──────────────────────────────────────── -->
+      <template v-else-if="activeTab === 'tools'">
+        <div class="settings-section-title d-flex align-center">
+          Tools
+          <v-spacer />
+          <v-btn color="primary" prepend-icon="mdi-plus" size="small" variant="tonal" @click="openToolDialog()">
+            Add Tool
+          </v-btn>
+        </div>
+        <p class="text-body-2 text-disabled mb-4">
+          Connect tools via MCP, or define custom Python / TypeScript functions in the specified format.
+        </p>
+        <v-card elevation="1">
+          <v-list density="compact">
+            <v-list-item
+              v-for="tool in toolsStore.tools"
+              :key="tool.id"
+              :title="tool.name"
+              rounded="lg"
+              class="ma-1"
             >
-              Save
-            </v-btn>
-          </v-card-actions>
+              <template #subtitle>
+                <v-chip size="x-small" class="mr-1">{{ tool.type }}</v-chip>
+                <span class="text-caption">{{ tool.description || '' }}</span>
+              </template>
+              <template #prepend>
+                <v-icon :icon="toolIcon(tool.type)" size="small" />
+              </template>
+              <template #append>
+                <v-chip :color="tool.enabled !== false ? 'success' : 'default'" size="x-small" class="mr-2">
+                  {{ tool.enabled !== false ? 'Active' : 'Disabled' }}
+                </v-chip>
+                <v-btn icon="mdi-pencil" size="x-small" variant="text" @click.stop="openToolDialog(tool)" />
+                <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="toolsStore.deleteTool(tool.id)" />
+              </template>
+            </v-list-item>
+            <v-list-item v-if="!toolsStore.tools.length">
+              <v-list-item-subtitle class="text-center py-4">No tools configured yet</v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
         </v-card>
-      </v-tabs-window-item>
-    </v-tabs-window>
+      </template>
+    </main>
 
-    <!-- Add Webhook Dialog -->
-    <v-dialog v-model="showAddWebhook" max-width="500">
+    <!-- ── Dialogs ──────────────────────────────────────────────────────────── -->
+
+    <!-- Model dialog -->
+    <v-dialog v-model="showModelDialog" max-width="560">
       <v-card>
-        <v-card-title class="pt-4">Add Webhook</v-card-title>
+        <v-card-title class="pt-4">{{ editingModel?.id ? 'Edit Model' : 'Add Model' }}</v-card-title>
         <v-card-text>
-          <v-text-field v-model="newWebhook.name" label="Name" variant="outlined" class="mb-3" autofocus />
-          <v-text-field v-model="newWebhook.url" label="URL" variant="outlined" class="mb-3" />
+          <v-text-field v-model="modelForm.name" label="Display Name" variant="outlined" class="mb-3" autofocus />
+          <v-select v-model="modelForm.type" :items="['model', 'webhook', 'agent']" label="Type" variant="outlined" class="mb-3" />
+          <template v-if="modelForm.type === 'model'">
+            <v-select v-model="modelForm.provider" :items="providerKeys_list" label="Provider" variant="outlined" class="mb-3" clearable />
+            <v-text-field v-model="modelForm.providerModel" label="Model Name (e.g. gpt-4o)" variant="outlined" class="mb-3" />
+            <v-textarea v-model="modelForm.systemPrompt" label="System Prompt" variant="outlined" rows="3" class="mb-3" />
+            <v-text-field v-model.number="modelForm.temperature" label="Temperature" type="number" step="0.1" min="0" max="2" variant="outlined" class="mb-3" />
+            <v-combobox
+              v-model="modelForm.knowledgeStoreIds"
+              :items="knowledgeStoreItems"
+              item-title="title"
+              item-value="value"
+              label="Knowledge Stores"
+              multiple
+              chips
+              variant="outlined"
+              class="mb-3"
+            />
+            <v-combobox
+              v-model="modelForm.toolIds"
+              :items="toolItems"
+              item-title="title"
+              item-value="value"
+              label="Tools"
+              multiple
+              chips
+              variant="outlined"
+            />
+          </template>
+          <template v-else-if="modelForm.type === 'webhook'">
+            <v-select
+              v-model="modelForm.webhookId"
+              :items="webhookItems"
+              item-title="title"
+              item-value="value"
+              label="Webhook"
+              variant="outlined"
+            />
+          </template>
+          <template v-else-if="modelForm.type === 'agent'">
+            <v-select
+              v-model="modelForm.agentId"
+              :items="agentItems"
+              item-title="title"
+              item-value="value"
+              label="Agent"
+              variant="outlined"
+            />
+          </template>
+          <v-switch v-model="modelForm.enabled" label="Enabled" color="primary" hide-details class="mt-2" />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showModelDialog = false">Cancel</v-btn>
+          <v-btn color="primary" @click="saveModel">Save</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Agent dialog -->
+    <v-dialog v-model="showAgentDialog" max-width="560">
+      <v-card>
+        <v-card-title class="pt-4">{{ editingAgent?.id ? 'Edit Agent' : 'Add Agent' }}</v-card-title>
+        <v-card-text>
+          <v-text-field v-model="agentForm.name" label="Name" variant="outlined" class="mb-3" autofocus />
+          <v-textarea v-model="agentForm.description" label="Description (optional)" variant="outlined" rows="2" class="mb-3" />
+          <v-select v-model="agentForm.provider" :items="providerKeys_list" label="Provider" variant="outlined" class="mb-3" clearable />
+          <v-text-field v-model="agentForm.providerModel" label="Model Name" variant="outlined" class="mb-3" />
+          <v-textarea v-model="agentForm.systemPrompt" label="System Prompt" variant="outlined" rows="4" class="mb-3" />
           <v-combobox
-            v-model="newWebhook.events"
-            label="Events"
+            v-model="agentForm.knowledgeStoreIds"
+            :items="knowledgeStoreItems"
+            item-title="title"
+            item-value="value"
+            label="Knowledge Stores"
             multiple
             chips
             variant="outlined"
-            :items="['message.created', 'chat.created', 'chat.deleted']"
+            class="mb-3"
+            hint="Each selected store adds a retrieve() tool automatically"
+            persistent-hint
+          />
+          <v-combobox
+            v-model="agentForm.toolIds"
+            :items="toolItems"
+            item-title="title"
+            item-value="value"
+            label="Tools"
+            multiple
+            chips
+            variant="outlined"
           />
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn variant="text" @click="showAddWebhook = false">Cancel</v-btn>
-          <v-btn color="primary" @click="addWebhook">Add</v-btn>
+          <v-btn variant="text" @click="showAgentDialog = false">Cancel</v-btn>
+          <v-btn color="primary" @click="saveAgent">Save</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
-  </v-container>
+
+    <!-- Tool dialog -->
+    <v-dialog v-model="showToolDialog" max-width="560">
+      <v-card>
+        <v-card-title class="pt-4">{{ editingTool?.id ? 'Edit Tool' : 'Add Tool' }}</v-card-title>
+        <v-card-text>
+          <v-text-field v-model="toolForm.name" label="Name" variant="outlined" class="mb-3" autofocus />
+          <v-textarea v-model="toolForm.description" label="Description" variant="outlined" rows="2" class="mb-3" />
+          <v-select v-model="toolForm.type" :items="['mcp', 'python', 'typescript']" label="Type" variant="outlined" class="mb-3" />
+          <template v-if="toolForm.type === 'mcp'">
+            <v-text-field v-model="toolForm.config.serverUrl" label="MCP Server URL" variant="outlined" class="mb-2" />
+            <v-text-field v-model="toolForm.config.toolName" label="Tool Name" variant="outlined" />
+          </template>
+          <template v-else>
+            <v-textarea v-model="toolForm.config.code" label="Function Code" variant="outlined" rows="6" font-family="monospace" />
+          </template>
+          <v-switch v-model="toolForm.enabled" label="Enabled" color="primary" hide-details class="mt-2" />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showToolDialog = false">Cancel</v-btn>
+          <v-btn color="primary" @click="saveTool">Save</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Create knowledge store dialog -->
+    <v-dialog v-model="showCreateKs" max-width="400">
+      <v-card>
+        <v-card-title class="pt-4">Create Knowledge Store</v-card-title>
+        <v-card-text>
+          <v-text-field v-model="newKsName" label="Name" variant="outlined" class="mb-3" autofocus />
+          <v-textarea v-model="newKsDesc" label="Description (optional)" variant="outlined" rows="2" />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showCreateKs = false">Cancel</v-btn>
+          <v-btn color="primary" :disabled="!newKsName.trim()" @click="createKs">Create</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useSettingsStore } from '../stores/settings'
+import { useModelsStore } from '../stores/models'
+import { useAgentsStore } from '../stores/agents'
+import { useToolsStore } from '../stores/tools'
+import { useKnowledgeStore } from '../stores/knowledge'
 
 const settingsStore = useSettingsStore()
+const modelsStore = useModelsStore()
+const agentsStore = useAgentsStore()
+const toolsStore = useToolsStore()
+const knowledgeStore = useKnowledgeStore()
+
+// Reusable item lists for comboboxes/selects
+const knowledgeStoreItems = computed(() =>
+  knowledgeStore.knowledgeStores.map(k => ({ title: k.name, value: k.id }))
+)
+const toolItems = computed(() =>
+  toolsStore.tools.map(t => ({ title: t.name, value: t.id }))
+)
+const webhookItems = computed(() =>
+  settingsStore.webhooks.map(w => ({ title: w.name, value: w.id }))
+)
+const agentItems = computed(() =>
+  agentsStore.agents.map(a => ({ title: a.name, value: a.id }))
+)
+
 const activeTab = ref('providers')
 const saving = ref(false)
-const showAddWebhook = ref(false)
-const newWebhook = reactive({ name: '', url: '', events: [] })
 
-const localSettings = reactive({
-  embeddingProvider: 'openai',
-  embeddingModel: 'text-embedding-ada-002',
-  embeddingDimensions: 1536,
-  mcpServerUrl: '',
-  mcpEnabled: false,
-  systemPrompt: '',
-  maxTokens: 2048,
-  temperature: 0.7
-})
+const tabs = [
+  { value: 'providers', label: 'Model Providers', icon: 'mdi-key' },
+  { value: 'models', label: 'Models', icon: 'mdi-brain' },
+  { value: 'knowledge', label: 'Knowledge Stores', icon: 'mdi-database' },
+  { value: 'agents', label: 'Agents', icon: 'mdi-robot' },
+  { value: 'tools', label: 'Tools', icon: 'mdi-tools' },
+]
+
+// ── Provider settings ───────────────────────────────────────────────────────
 
 const providers = [
   { key: 'openai', name: 'OpenAI', keyLabel: 'API Key', hasModel: true },
@@ -301,7 +485,6 @@ const providerKeys = reactive({})
 const providerUrls = reactive({})
 const providerModels = reactive({})
 const showKey = reactive({})
-
 providers.forEach(p => {
   providerEnabled[p.key] = false
   providerKeys[p.key] = ''
@@ -310,9 +493,12 @@ providers.forEach(p => {
   showKey[p.key] = false
 })
 
+const providerKeys_list = computed(() =>
+  providers.filter(p => providerEnabled[p.key]).map(p => p.key)
+)
+
 watch(() => settingsStore.settings, (s) => {
   if (!s || !Object.keys(s).length) return
-  Object.assign(localSettings, s)
   providers.forEach(p => {
     providerEnabled[p.key] = s[p.key]?.enabled || false
     providerKeys[p.key] = s[p.key]?.apiKey || ''
@@ -327,22 +513,216 @@ async function saveProviderSettings() {
   providers.forEach(p => {
     providerData[p.key] = { enabled: providerEnabled[p.key], apiKey: providerKeys[p.key], baseUrl: providerUrls[p.key], defaultModel: providerModels[p.key] }
   })
-  try { await settingsStore.saveSettings({ ...localSettings, ...providerData }) } finally { saving.value = false }
+  try { await settingsStore.saveSettings(providerData) } finally { saving.value = false }
 }
 
-async function saveAll() {
-  saving.value = true
-  try { await settingsStore.saveSettings({ ...localSettings }) } finally { saving.value = false }
+// ── Model dialog ────────────────────────────────────────────────────────────
+
+const showModelDialog = ref(false)
+const editingModel = ref(null)
+const modelForm = reactive({
+  name: '', type: 'model', provider: null, providerModel: '', systemPrompt: '',
+  temperature: 0.7, knowledgeStoreIds: [], toolIds: [], webhookId: null, agentId: null, enabled: true,
+})
+
+function openModelDialog(model = null) {
+  editingModel.value = model
+  if (model) {
+    Object.assign(modelForm, {
+      name: model.name, type: model.type || 'model',
+      provider: model.provider || null, providerModel: model.providerModel || '',
+      systemPrompt: model.systemPrompt || '', temperature: model.temperature ?? 0.7,
+      knowledgeStoreIds: model.knowledgeStoreIds || [], toolIds: model.toolIds || [],
+      webhookId: model.webhookId || null, agentId: model.agentId || null,
+      enabled: model.enabled !== false,
+    })
+  } else {
+    Object.assign(modelForm, {
+      name: '', type: 'model', provider: null, providerModel: '', systemPrompt: '',
+      temperature: 0.7, knowledgeStoreIds: [], toolIds: [], webhookId: null, agentId: null, enabled: true,
+    })
+  }
+  showModelDialog.value = true
 }
 
-async function addWebhook() {
-  await settingsStore.createWebhook({ ...newWebhook })
-  showAddWebhook.value = false
-  Object.assign(newWebhook, { name: '', url: '', events: [] })
+async function saveModel() {
+  const payload = { ...modelForm }
+  if (editingModel.value?.id) {
+    await modelsStore.updateModel(editingModel.value.id, payload)
+  } else {
+    await modelsStore.createModel(payload)
+  }
+  showModelDialog.value = false
+}
+
+// ── Agent dialog ─────────────────────────────────────────────────────────────
+
+const showAgentDialog = ref(false)
+const editingAgent = ref(null)
+const agentForm = reactive({
+  name: '', description: '', provider: null, providerModel: '',
+  systemPrompt: '', knowledgeStoreIds: [], toolIds: [],
+})
+
+function openAgentDialog(agent = null) {
+  editingAgent.value = agent
+  if (agent) {
+    Object.assign(agentForm, {
+      name: agent.name, description: agent.description || '',
+      provider: agent.provider || null, providerModel: agent.providerModel || '',
+      systemPrompt: agent.systemPrompt || '',
+      knowledgeStoreIds: agent.knowledgeStoreIds || [],
+      toolIds: agent.toolIds || [],
+    })
+  } else {
+    Object.assign(agentForm, { name: '', description: '', provider: null, providerModel: '', systemPrompt: '', knowledgeStoreIds: [], toolIds: [] })
+  }
+  showAgentDialog.value = true
+}
+
+async function saveAgent() {
+  if (editingAgent.value?.id) {
+    await agentsStore.updateAgent(editingAgent.value.id, { ...agentForm })
+  } else {
+    await agentsStore.createAgent({ ...agentForm })
+  }
+  showAgentDialog.value = false
+}
+
+// ── Tool dialog ───────────────────────────────────────────────────────────────
+
+const showToolDialog = ref(false)
+const editingTool = ref(null)
+const toolForm = reactive({ name: '', description: '', type: 'mcp', config: { serverUrl: '', toolName: '', code: '' }, enabled: true })
+
+function toolIcon(type) {
+  return { mcp: 'mdi-connection', python: 'mdi-language-python', typescript: 'mdi-language-typescript' }[type] || 'mdi-tools'
+}
+
+function openToolDialog(tool = null) {
+  editingTool.value = tool
+  if (tool) {
+    Object.assign(toolForm, {
+      name: tool.name, description: tool.description || '', type: tool.type,
+      config: { serverUrl: tool.config?.serverUrl || '', toolName: tool.config?.toolName || '', code: tool.config?.code || '' },
+      enabled: tool.enabled !== false,
+    })
+  } else {
+    Object.assign(toolForm, { name: '', description: '', type: 'mcp', config: { serverUrl: '', toolName: '', code: '' }, enabled: true })
+  }
+  showToolDialog.value = true
+}
+
+async function saveTool() {
+  const payload = { ...toolForm, config: { ...toolForm.config } }
+  if (editingTool.value?.id) {
+    await toolsStore.updateTool(editingTool.value.id, payload)
+  } else {
+    await toolsStore.createTool(payload)
+  }
+  showToolDialog.value = false
+}
+
+// ── Knowledge stores ──────────────────────────────────────────────────────────
+
+const selectedKs = ref(null)
+const showCreateKs = ref(false)
+const newKsName = ref('')
+const newKsDesc = ref('')
+const isDragging = ref(false)
+const docInput = ref(null)
+const ksDocs = computed(() => selectedKs.value ? (knowledgeStore.documents[selectedKs.value.id] || []) : [])
+
+async function selectKs(ks) {
+  selectedKs.value = ks
+  await knowledgeStore.loadDocuments(ks.id)
+}
+
+async function createKs() {
+  await knowledgeStore.createKnowledgeStore(newKsName.value, newKsDesc.value)
+  showCreateKs.value = false
+  newKsName.value = ''
+  newKsDesc.value = ''
+}
+
+async function handleDrop(e) {
+  isDragging.value = false
+  if (!selectedKs.value) return
+  for (const file of e.dataTransfer.files) await knowledgeStore.uploadDocument(selectedKs.value.id, file)
+}
+
+async function handleFileSelect(e) {
+  if (!selectedKs.value) return
+  for (const file of e.target.files) await knowledgeStore.uploadDocument(selectedKs.value.id, file)
+}
+
+function statusColor(status) {
+  return { ready: 'success', processing: 'warning', failed: 'error' }[status] || 'info'
 }
 
 onMounted(async () => {
-  await settingsStore.loadSettings()
-  await settingsStore.loadWebhooks()
+  await Promise.all([
+    settingsStore.loadSettings(),
+    settingsStore.loadWebhooks(),
+    modelsStore.loadModels(),
+    agentsStore.loadAgents(),
+    toolsStore.loadTools(),
+    knowledgeStore.loadKnowledgeStores(),
+  ])
 })
 </script>
+
+<style scoped>
+.settings-layout {
+  display: flex;
+  height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+.settings-nav {
+  width: 200px;
+  min-width: 200px;
+  border-right: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  overflow-y: auto;
+  background: rgb(var(--v-theme-surface));
+}
+
+.settings-nav__title {
+  letter-spacing: 0.08em;
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.settings-section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.drop-zone {
+  border: 2px dashed rgba(var(--v-theme-primary), 0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.drop-zone:hover,
+.drop-zone.dragging {
+  border-color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.05);
+}
+
+@media (max-width: 600px) {
+  .settings-nav {
+    width: 56px;
+    min-width: 56px;
+  }
+  .settings-nav .v-list-item__title,
+  .settings-nav__title {
+    display: none;
+  }
+}
+</style>

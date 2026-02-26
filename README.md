@@ -19,23 +19,29 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 
 ## Screenshots
 
-### Chat View — icon-only sidebar (dark theme)
-![Chat – dark, rail sidebar](docs/screenshots/chat.png)
+### Chat View — icon-only left rail, chat sidebar with All/Saved filter
+![Chat](docs/screenshots/chat.png)
 
-### Chat View — expanded sidebar (dark theme)
-![Chat – dark, expanded sidebar](docs/screenshots/chat-expanded.png)
+### Chat View — expanded left sidebar
+![Chat expanded](docs/screenshots/chat-expanded.png)
 
-### Chat View — light theme
-![Chat – light](docs/screenshots/chat-light.png)
+### Chat View — mobile
+![Chat mobile](docs/screenshots/chat-mobile.png)
 
-### Knowledge Stores
-![Knowledge Stores](docs/screenshots/knowledge.png)
+### Settings — Model Providers
+![Settings – providers](docs/screenshots/settings.png)
 
-### Settings
-![Settings](docs/screenshots/settings.png)
+### Settings — Models (named configurations users chat with)
+![Settings – models](docs/screenshots/settings-models.png)
 
-### Mobile View
-![Mobile](docs/screenshots/chat-mobile.png)
+### Settings — Knowledge Stores
+![Settings – knowledge](docs/screenshots/settings-knowledge.png)
+
+### Settings — Agents
+![Settings – agents](docs/screenshots/settings-agents.png)
+
+### Settings — Tools
+![Settings – tools](docs/screenshots/settings-tools.png)
 
 ---
 
@@ -274,6 +280,36 @@ Configure an MCP server URL in Settings.  The backend MCP service:
 | GET | `/api/providers` | List available providers |
 | POST | `/api/mcp/tools` | List MCP tools |
 | POST | `/api/mcp/call` | Call MCP tool |
+
+### Models (named AI configurations)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/models` | List named model configs |
+| POST | `/api/models` | Create model config |
+| GET | `/api/models/:id` | Get model config |
+| PUT | `/api/models/:id` | Update model config |
+| DELETE | `/api/models/:id` | Delete model config |
+
+### Agents
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/agents` | List agents |
+| POST | `/api/agents` | Create agent |
+| GET | `/api/agents/:id` | Get agent |
+| PUT | `/api/agents/:id` | Update agent |
+| DELETE | `/api/agents/:id` | Delete agent |
+
+### Tools
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/tools` | List tools |
+| POST | `/api/tools` | Create tool |
+| GET | `/api/tools/:id` | Get tool |
+| PUT | `/api/tools/:id` | Update tool |
+| DELETE | `/api/tools/:id` | Delete tool |
 
 ---
 

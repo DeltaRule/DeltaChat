@@ -9,25 +9,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- **Left sidebar navigation** – workspaces (Chat, Knowledge) are now accessible via a collapsible icon-only sidebar on the left, inspired by modern chat apps (Slack / Discord style).
-- **Expandable sidebar** – clicking the chevron or the hamburger menu icon expands the rail from icon-only to icon + label mode.
-- **Settings icon in top-right corner** – Settings is no longer a top-level navigation link but a dedicated ⚙ button in the top-right of the app bar.
-- **Connection status indicator** moved to the top bar alongside the theme toggle and settings button.
-- **Mobile-responsive layout** – the sidebar becomes a temporary overlay drawer on small screens; a hamburger icon in the app bar toggles it. The chat sidebar and model/knowledge selectors adapt gracefully to narrow viewports.
-- **Chat sidebar toggle on mobile** – a menu button in the chat toolbar opens/closes the conversation list when on a small screen.
-- **Mobile model & knowledge selectors** – appear below the chat input on mobile so they don't crowd the toolbar.
-- **Improved empty states** – more descriptive placeholder copy and icons on the chat, knowledge, and settings screens.
-- **Settings page redesign** – tabbed layout with icons on each tab, improved card headers, and consistent save buttons with icons.
-- **Knowledge Stores redesign** – improved card layout, empty-state illustration, and cleaner document list.
-- `CHANGELOG.md` – this file.
+- **`ai_models` collection** – named model configurations that users select when starting a chat. Each config stores display name, type (`model`|`webhook`|`agent`), provider, provider model, system prompt, temperature, max tokens, linked knowledge stores, and linked tools.
+- **`agents` collection** – reusable agent definitions with system prompt, provider, knowledge stores (each auto-gains a `retrieve()` tool), and tools.
+- **`tools` collection** – tool definitions of type `mcp`, `python`, or `typescript`, each with a JSON config blob.
+- **New API routes**: `GET/POST/PUT/DELETE /api/models`, `/api/agents`, `/api/tools`.
+- **ChatService model resolution** – when a message includes a `modelId`, the service looks up the named model config and applies its provider model, system prompt, knowledge stores, and temperature automatically. If the model type is `agent`, the linked agent config is resolved instead.
+- **Chat `modelId` field** – chats now store the selected named model ID alongside the raw model string for backward compat.
+- **Chat `folder` field** – chats can be grouped into named folders in the sidebar.
+- **Chat `bookmarked` field** – chats can be saved/bookmarked and filtered via the Saved tab.
+- **`PATCH /api/chats/:id`** – chat updates now exposed via the store's `updateChat()` action.
+- **Settings page redesigned** with a left-side navigation panel (200 px) and five tabs:
+  1. **Model Providers** – configure API keys and base URLs.
+  2. **Models** – create/edit/delete named model configurations that users chat with; supports model, webhook, and agent types.
+  3. **Knowledge Stores** – manage stores and upload documents (moved from its own top-level page).
+  4. **Agents** – define agents with system prompts, knowledge stores, and tools.
+  5. **Tools** – add MCP servers, Python, or TypeScript function tools.
+- **Chat sidebar** now has All / Saved filter tabs and folder groups (expandable `v-list-group` per folder name).
+- **Model selector in chat** now shows named model configs (from `/api/models`) instead of raw provider model strings.
+- **New Chat dialog** supports optional folder assignment.
+- Inline bookmark button on each chat list item.
+- New Pinia stores: `stores/models.js`, `stores/agents.js`, `stores/tools.js`.
+- Knowledge Stores removed from the main left navigation (it lives in Settings now).
 
 ### Changed
-- `AppNavigation.vue` converted from `v-app-bar` navigation links to a `v-navigation-drawer` with Vuetify 3 `rail` mode (icon-only) that expands on demand.
-- `App.vue` redesigned: navigation drawer + minimal top app bar (`density="compact"`) replaces the full-height primary colored bar.
-- `ChatInterface.vue` refactored with CSS flexbox layout instead of Vuetify grid columns, enabling a proper full-height chat window and a slide-in mobile sidebar.
-- `KnowledgeStores.vue` – replaced absolute column sizes with responsive `sm`/`md` breakpoints and added an empty-state panel when no store is selected.
-- `SettingsPanel.vue` – all tabs now have leading icons; provider cards have dividers; labels match the body-1 / font-weight-bold style used throughout the app.
-- README screenshots section updated to reflect the new UI.
+- `ChatInterface.vue` – chat store `createChat()` now accepts `(title, modelId, folder)` instead of `(name, model)`.
+- `AppNavigation.vue` – sidebar only shows the Chat workspace icon; Knowledge is accessible via Settings.
+- `router/index.js` – removed `/knowledge` route; only `/` and `/settings` remain.
+- `chat.js` store – `loadMessages` now calls `GET /api/chats/:id` and reads `.messages` from the response (fixing the previous 404 on a non-existent `/messages` sub-path).
+- `schema.ts` – added `modelId`, `folder`, `bookmarked` fields to the `chats` schema.
 
 ---
 

@@ -24,28 +24,97 @@
         />
       </v-sheet>
 
+      <!-- Filter tabs: All / Bookmarked -->
+      <v-btn-toggle v-model="chatFilter" mandatory density="compact" class="mx-2 my-1" style="width: calc(100% - 16px);">
+        <v-btn value="all" size="x-small" class="flex-1">All</v-btn>
+        <v-btn value="bookmarked" size="x-small" class="flex-1">
+          <v-icon size="14" class="mr-1">mdi-bookmark</v-icon>Saved
+        </v-btn>
+      </v-btn-toggle>
+
       <v-list class="chat-list" density="compact">
-        <v-list-item
-          v-for="chat in filteredChats"
-          :key="chat.id"
-          :active="chat.id === chatStore.currentChatId"
-          :title="chat.name || 'Untitled Chat'"
-          :subtitle="chat.model || chat.webhookUrl || ''"
-          rounded="lg"
-          class="mb-1"
-          @click="selectChat(chat.id)"
-        >
-          <template #append>
-            <v-btn
-              icon="mdi-delete"
-              size="x-small"
-              variant="text"
-              color="error"
-              @click.stop="chatStore.deleteChat(chat.id)"
-            />
-          </template>
-        </v-list-item>
-        <v-list-item v-if="filteredChats.length === 0">
+        <!-- Folder groups -->
+        <template v-if="chatFilter === 'all'">
+          <!-- Ungrouped chats -->
+          <v-list-item
+            v-for="chat in ungroupedChats"
+            :key="chat.id"
+            :active="chat.id === chatStore.currentChatId"
+            :title="chat.title || 'New Chat'"
+            rounded="lg"
+            class="mb-1"
+            @click="selectChat(chat.id)"
+          >
+            <template #prepend>
+              <v-icon :icon="chat.bookmarked ? 'mdi-bookmark' : 'mdi-chat-outline'" size="16" class="mr-1" />
+            </template>
+            <template #append>
+              <v-btn
+                :icon="chat.bookmarked ? 'mdi-bookmark' : 'mdi-bookmark-outline'"
+                size="x-small"
+                variant="text"
+                :color="chat.bookmarked ? 'primary' : undefined"
+                @click.stop="toggleBookmark(chat)"
+              />
+              <v-btn
+                icon="mdi-delete"
+                size="x-small"
+                variant="text"
+                color="error"
+                @click.stop="chatStore.deleteChat(chat.id)"
+              />
+            </template>
+          </v-list-item>
+
+          <!-- Folders -->
+          <v-list-group v-for="folder in folders" :key="folder" :value="folder">
+            <template #activator="{ props: gProps }">
+              <v-list-item v-bind="gProps" :title="folder" prepend-icon="mdi-folder" rounded="lg" class="mb-1" />
+            </template>
+            <v-list-item
+              v-for="chat in chatsByFolder[folder]"
+              :key="chat.id"
+              :active="chat.id === chatStore.currentChatId"
+              :title="chat.title || 'New Chat'"
+              rounded="lg"
+              class="mb-1 ml-2"
+              @click="selectChat(chat.id)"
+            >
+              <template #prepend>
+                <v-icon icon="mdi-chat-outline" size="16" class="mr-1" />
+              </template>
+              <template #append>
+                <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="chatStore.deleteChat(chat.id)" />
+              </template>
+            </v-list-item>
+          </v-list-group>
+        </template>
+
+        <!-- Bookmarked only -->
+        <template v-else>
+          <v-list-item
+            v-for="chat in bookmarkedChats"
+            :key="chat.id"
+            :active="chat.id === chatStore.currentChatId"
+            :title="chat.title || 'New Chat'"
+            rounded="lg"
+            class="mb-1"
+            @click="selectChat(chat.id)"
+          >
+            <template #prepend>
+              <v-icon icon="mdi-bookmark" size="16" color="primary" class="mr-1" />
+            </template>
+            <template #append>
+              <v-btn icon="mdi-bookmark" size="x-small" variant="text" color="primary" @click.stop="toggleBookmark(chat)" />
+              <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="chatStore.deleteChat(chat.id)" />
+            </template>
+          </v-list-item>
+          <v-list-item v-if="bookmarkedChats.length === 0">
+            <v-list-item-subtitle class="text-center pa-4">No saved chats</v-list-item-subtitle>
+          </v-list-item>
+        </template>
+
+        <v-list-item v-if="chatFilter === 'all' && filteredChats.length === 0">
           <v-list-item-subtitle class="text-center pa-4">No chats yet</v-list-item-subtitle>
         </v-list-item>
       </v-list>
@@ -85,25 +154,18 @@
           <span v-else class="text-body-2 text-disabled">Select or create a chat</span>
         </v-toolbar-title>
         <v-spacer />
+        <!-- Named model selector (desktop) -->
         <v-select
-          v-if="currentChat && !currentChat.webhookUrl"
-          v-model="selectedModel"
-          :items="availableModels"
+          v-if="currentChat"
+          v-model="selectedModelId"
+          :items="modelItems"
+          item-title="name"
+          item-value="id"
           density="compact"
           hide-details
           variant="outlined"
           label="Model"
-          style="max-width: 160px"
-          class="mr-2 d-none d-sm-flex"
-        />
-        <v-select
-          v-model="selectedKnowledgeStore"
-          :items="knowledgeItems"
-          density="compact"
-          hide-details
-          variant="outlined"
-          label="Knowledge"
-          style="max-width: 140px"
+          style="max-width: 180px"
           class="mr-1 d-none d-sm-flex"
         />
       </v-toolbar>
@@ -145,26 +207,17 @@
 
       <!-- Input area -->
       <v-sheet v-if="chatStore.currentChatId" class="chat-input" border="t" color="surface">
-        <!-- Mobile model/knowledge selectors -->
-        <div v-if="mobile && currentChat" class="d-flex gap-2 mb-2">
+        <!-- Mobile: model selector above input -->
+        <div v-if="mobile && currentChat" class="mb-2">
           <v-select
-            v-if="!currentChat.webhookUrl"
-            v-model="selectedModel"
-            :items="availableModels"
+            v-model="selectedModelId"
+            :items="modelItems"
+            item-title="name"
+            item-value="id"
             density="compact"
             hide-details
             variant="outlined"
             label="Model"
-            class="flex-1"
-          />
-          <v-select
-            v-model="selectedKnowledgeStore"
-            :items="knowledgeItems"
-            density="compact"
-            hide-details
-            variant="outlined"
-            label="Knowledge"
-            class="flex-1"
           />
         </div>
         <v-row no-gutters align="end">
@@ -201,22 +254,35 @@
     </section>
 
     <!-- New Chat Dialog -->
-    <v-dialog v-model="showNewChat" max-width="400">
+    <v-dialog v-model="showNewChat" max-width="420">
       <v-card>
         <v-card-title class="pt-4">New Chat</v-card-title>
         <v-card-text>
           <v-text-field
             v-model="newChatName"
-            label="Chat Name"
+            label="Chat Name (optional)"
             variant="outlined"
             class="mb-3"
             autofocus
+            placeholder="Will be auto-named from first message"
           />
           <v-select
-            v-model="newChatModel"
-            :items="availableModels"
+            v-model="newChatModelId"
+            :items="modelItems"
+            item-title="name"
+            item-value="id"
             label="Model"
             variant="outlined"
+            hint="Select a configured model or agent"
+            persistent-hint
+          />
+          <v-text-field
+            v-model="newChatFolder"
+            label="Folder (optional)"
+            variant="outlined"
+            class="mt-3"
+            placeholder="e.g. Work, Personal"
+            prepend-inner-icon="mdi-folder"
           />
         </v-card-text>
         <v-card-actions>
@@ -233,41 +299,55 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useChatStore } from '../stores/chat'
-import { useKnowledgeStore } from '../stores/knowledge'
+import { useModelsStore } from '../stores/models'
 import ChatMessage from './ChatMessage.vue'
 
 const chatStore = useChatStore()
-const knowledgeStore = useKnowledgeStore()
+const modelsStore = useModelsStore()
 const { mobile } = useDisplay()
 
 const search = ref('')
 const inputMessage = ref('')
 const showNewChat = ref(false)
 const newChatName = ref('')
-const newChatModel = ref('gpt-4o')
-const selectedModel = ref('gpt-4o')
-const selectedKnowledgeStore = ref(null)
+const newChatModelId = ref(null)
+const newChatFolder = ref('')
+const selectedModelId = ref(null)
 const chatTitle = ref('')
 const messagesContainer = ref(null)
 const fileInput = ref(null)
 const sidebarOpen = ref(true)
+const chatFilter = ref('all')
 
-const availableModels = ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'claude-3-5-sonnet', 'llama3', 'mistral']
-
+// Chat filter + grouping
 const filteredChats = computed(() =>
-  chatStore.chats.filter(c => (c.name || '').toLowerCase().includes(search.value.toLowerCase()))
+  chatStore.chats.filter(c => (c.title || '').toLowerCase().includes(search.value.toLowerCase()))
 )
+const ungroupedChats = computed(() => filteredChats.value.filter(c => !c.folder))
+const bookmarkedChats = computed(() => filteredChats.value.filter(c => c.bookmarked))
+const folders = computed(() => [...new Set(filteredChats.value.filter(c => c.folder).map(c => c.folder))])
+const chatsByFolder = computed(() => {
+  const map = {}
+  filteredChats.value.filter(c => c.folder).forEach(c => {
+    if (!map[c.folder]) map[c.folder] = []
+    map[c.folder].push(c)
+  })
+  return map
+})
+
+// Model items for selector
+const modelItems = computed(() => [
+  { name: '(None)', id: null },
+  ...modelsStore.aiModels.filter(m => m.enabled !== false).map(m => ({ name: m.name, id: m.id }))
+])
+
 const currentChat = computed(() => chatStore.chats.find(c => c.id === chatStore.currentChatId))
 const currentChatMessages = computed(() => chatStore.messages[chatStore.currentChatId] || [])
-const knowledgeItems = computed(() => [
-  { title: 'None', value: null },
-  ...knowledgeStore.knowledgeStores.map(k => ({ title: k.name, value: k.id }))
-])
 
 watch(() => currentChat.value, (chat) => {
   if (chat) {
-    chatTitle.value = chat.name || ''
-    selectedModel.value = chat.model || 'gpt-4o'
+    chatTitle.value = chat.title || ''
+    selectedModelId.value = chat.modelId || null
   }
 })
 
@@ -285,10 +365,11 @@ async function selectChat(id) {
 }
 
 async function createNewChat() {
-  const chat = await chatStore.createChat(newChatName.value || 'New Chat', newChatModel.value)
+  const chat = await chatStore.createChat(newChatName.value || '', newChatModelId.value, newChatFolder.value)
   chatStore.currentChatId = chat.id
   showNewChat.value = false
   newChatName.value = ''
+  newChatFolder.value = ''
   if (mobile.value) sidebarOpen.value = false
 }
 
@@ -297,13 +378,18 @@ async function sendMessage() {
   const content = inputMessage.value.trim()
   inputMessage.value = ''
   chatStore.streamMessage(chatStore.currentChatId, content, {
-    model: selectedModel.value,
-    knowledgeStoreId: selectedKnowledgeStore.value
+    modelId: selectedModelId.value
   })
 }
 
-function updateChatTitle() {
-  // Could call API to update chat name
+async function updateChatTitle() {
+  if (currentChat.value && chatTitle.value !== currentChat.value.title) {
+    await chatStore.updateChat(chatStore.currentChatId, { title: chatTitle.value })
+  }
+}
+
+async function toggleBookmark(chat) {
+  await chatStore.updateChat(chat.id, { bookmarked: !chat.bookmarked })
 }
 
 function handleFileAttach(e) {
@@ -313,8 +399,7 @@ function handleFileAttach(e) {
 
 onMounted(async () => {
   await chatStore.loadChats()
-  await knowledgeStore.loadKnowledgeStores()
-  // Start collapsed on mobile
+  await modelsStore.loadModels()
   if (mobile.value) sidebarOpen.value = false
 })
 </script>

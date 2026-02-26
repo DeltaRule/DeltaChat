@@ -11,6 +11,9 @@ import knowledgeRouter from './knowledge';
 import webhooksRouter from './webhooks';
 import settingsRouter from './settings';
 import mcpRouter from './mcp';
+import modelsRouter from './models';
+import agentsRouter from './agents';
+import toolsRouter from './tools';
 
 const router = Router();
 
@@ -31,6 +34,9 @@ router.use('/knowledge-stores', knowledgeRouter);
 router.use('/webhooks', webhooksRouter);
 router.use('/settings', settingsRouter);
 router.use('/mcp', mcpRouter);
+router.use('/models', modelsRouter);
+router.use('/agents', agentsRouter);
+router.use('/tools', toolsRouter);
 
 // GET /api/providers
 router.get('/providers', async (_req: Request, res: Response, next: NextFunction) => {

@@ -65,20 +65,6 @@
           />
         </template>
       </v-tooltip>
-
-      <v-tooltip :text="'Knowledge'" location="right" :disabled="!rail || mobile">
-        <template #activator="{ props: tipProps }">
-          <v-list-item
-            v-bind="tipProps"
-            prepend-icon="mdi-database"
-            title="Knowledge"
-            value="knowledge"
-            to="/knowledge"
-            rounded="lg"
-            class="mb-1"
-          />
-        </template>
-      </v-tooltip>
     </v-list>
   </v-navigation-drawer>
 </template>
