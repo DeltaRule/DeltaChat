@@ -4,12 +4,14 @@
     :rail="rail && !mobile"
     :temporary="mobile"
     :permanent="!mobile"
-    :width="220"
+    :width="280"
     elevation="1"
+    class="d-flex flex-column"
+    style="overflow: hidden;"
   >
-    <!-- Desktop header -->
+    <!-- ── Desktop header ─────────────────────────────────── -->
     <template v-if="!mobile">
-      <!-- Collapsed: logo only — click it to expand -->
+      <!-- Collapsed: logo only — click to expand -->
       <div v-if="rail" class="d-flex justify-center align-center py-3">
         <v-avatar
           color="primary"
@@ -39,7 +41,7 @@
       <v-divider />
     </template>
 
-    <!-- Mobile header -->
+    <!-- ── Mobile header ──────────────────────────────────── -->
     <template v-else>
       <div class="d-flex align-center px-3 py-3">
         <v-avatar color="primary" size="26" rounded="sm" class="mr-2" style="flex-shrink:0">
@@ -50,27 +52,175 @@
       <v-divider />
     </template>
 
-    <!-- Navigation: + New Chat -->
-    <v-list density="compact" nav class="mt-1">
-      <v-tooltip text="New Chat" location="right" :disabled="!rail || mobile">
+    <!-- ── Collapsed rail: + icon only ───────────────────── -->
+    <v-list v-if="rail && !mobile" density="compact" nav class="mt-1">
+      <v-tooltip text="New Chat" location="right">
         <template #activator="{ props: tipProps }">
           <v-list-item
             v-bind="tipProps"
             prepend-icon="mdi-plus"
-            title="New Chat"
-            value="new-chat"
             rounded="lg"
-            class="mb-1"
             @click="goToNewChat"
           />
         </template>
       </v-tooltip>
     </v-list>
+
+    <!-- ── Expanded: full chat sidebar ───────────────────── -->
+    <template v-else>
+      <div class="pa-2 flex-shrink-0">
+        <v-btn
+          block
+          color="primary"
+          prepend-icon="mdi-plus"
+          size="small"
+          class="mb-2"
+          @click="goToNewChat"
+        >
+          New Chat
+        </v-btn>
+        <v-text-field
+          v-model="search"
+          placeholder="Search chats…"
+          density="compact"
+          hide-details
+          prepend-inner-icon="mdi-magnify"
+          variant="outlined"
+          clearable
+        />
+      </div>
+
+      <v-btn-toggle
+        v-model="chatFilter"
+        mandatory
+        density="compact"
+        class="mx-2 mb-1 flex-shrink-0"
+        style="width: calc(100% - 16px);"
+      >
+        <v-btn value="all" size="x-small" class="flex-1">All</v-btn>
+        <v-btn value="bookmarked" size="x-small" class="flex-1">
+          <v-icon size="14" class="mr-1">mdi-bookmark</v-icon>Saved
+        </v-btn>
+      </v-btn-toggle>
+
+      <v-list class="sidebar-chat-list" density="compact">
+        <!-- All chats view -->
+        <template v-if="chatFilter === 'all'">
+          <v-list-item
+            v-for="chat in ungroupedChats"
+            :key="chat.id"
+            :active="chat.id === chatStore.currentChatId"
+            :title="chat.title || 'New Chat'"
+            rounded="lg"
+            class="mb-1"
+            @click="selectChat(chat.id)"
+          >
+            <template #prepend>
+              <v-icon
+                :icon="chat.bookmarked ? 'mdi-bookmark' : 'mdi-chat-outline'"
+                size="16"
+                class="mr-1"
+              />
+            </template>
+            <template #append>
+              <v-btn
+                :icon="chat.bookmarked ? 'mdi-bookmark' : 'mdi-bookmark-outline'"
+                size="x-small"
+                variant="text"
+                :color="chat.bookmarked ? 'primary' : undefined"
+                @click.stop="toggleBookmark(chat)"
+              />
+              <v-btn
+                icon="mdi-delete"
+                size="x-small"
+                variant="text"
+                color="error"
+                @click.stop="chatStore.deleteChat(chat.id)"
+              />
+            </template>
+          </v-list-item>
+
+          <v-list-group v-for="folder in folders" :key="folder" :value="folder">
+            <template #activator="{ props: gProps }">
+              <v-list-item
+                v-bind="gProps"
+                :title="folder"
+                prepend-icon="mdi-folder"
+                rounded="lg"
+                class="mb-1"
+              />
+            </template>
+            <v-list-item
+              v-for="chat in chatsByFolder[folder]"
+              :key="chat.id"
+              :active="chat.id === chatStore.currentChatId"
+              :title="chat.title || 'New Chat'"
+              rounded="lg"
+              class="mb-1 ml-2"
+              @click="selectChat(chat.id)"
+            >
+              <template #prepend>
+                <v-icon icon="mdi-chat-outline" size="16" class="mr-1" />
+              </template>
+              <template #append>
+                <v-btn
+                  icon="mdi-delete"
+                  size="x-small"
+                  variant="text"
+                  color="error"
+                  @click.stop="chatStore.deleteChat(chat.id)"
+                />
+              </template>
+            </v-list-item>
+          </v-list-group>
+
+          <v-list-item v-if="filteredChats.length === 0">
+            <v-list-item-subtitle class="text-center pa-4">No chats yet</v-list-item-subtitle>
+          </v-list-item>
+        </template>
+
+        <!-- Bookmarked view -->
+        <template v-else>
+          <v-list-item
+            v-for="chat in bookmarkedChats"
+            :key="chat.id"
+            :active="chat.id === chatStore.currentChatId"
+            :title="chat.title || 'New Chat'"
+            rounded="lg"
+            class="mb-1"
+            @click="selectChat(chat.id)"
+          >
+            <template #prepend>
+              <v-icon icon="mdi-bookmark" size="16" color="primary" class="mr-1" />
+            </template>
+            <template #append>
+              <v-btn
+                icon="mdi-bookmark"
+                size="x-small"
+                variant="text"
+                color="primary"
+                @click.stop="toggleBookmark(chat)"
+              />
+              <v-btn
+                icon="mdi-delete"
+                size="x-small"
+                variant="text"
+                color="error"
+                @click.stop="chatStore.deleteChat(chat.id)"
+              />
+            </template>
+          </v-list-item>
+          <v-list-item v-if="bookmarkedChats.length === 0">
+            <v-list-item-subtitle class="text-center pa-4">No saved chats</v-list-item-subtitle>
+          </v-list-item>
+        </template>
+      </v-list>
+    </template>
   </v-navigation-drawer>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
@@ -91,8 +241,53 @@ const drawerOpen = computed({
   set: (val) => emit('update:modelValue', val)
 })
 
+const search = ref('')
+const chatFilter = ref('all')
+
+const filteredChats = computed(() =>
+  chatStore.chats.filter(c =>
+    (c.title || '').toLowerCase().includes(search.value.toLowerCase())
+  )
+)
+const ungroupedChats = computed(() => filteredChats.value.filter(c => !c.folder))
+const bookmarkedChats = computed(() => filteredChats.value.filter(c => c.bookmarked))
+const folders = computed(() => [
+  ...new Set(filteredChats.value.filter(c => c.folder).map(c => c.folder))
+])
+const chatsByFolder = computed(() => {
+  const map = {}
+  filteredChats.value.filter(c => c.folder).forEach(c => {
+    if (!map[c.folder]) map[c.folder] = []
+    map[c.folder].push(c)
+  })
+  return map
+})
+
 function goToNewChat() {
   chatStore.currentChatId = null
-  router.push('/')
+  if (router.currentRoute.value.path !== '/') router.push('/')
+  if (mobile.value) emit('update:modelValue', false)
 }
+
+async function selectChat(id) {
+  chatStore.currentChatId = id
+  await chatStore.loadMessages(id)
+  router.push('/')
+  if (mobile.value) emit('update:modelValue', false)
+}
+
+async function toggleBookmark(chat) {
+  await chatStore.updateChat(chat.id, { bookmarked: !chat.bookmarked })
+}
+
+onMounted(async () => {
+  await chatStore.loadChats()
+})
 </script>
+
+<style scoped>
+.sidebar-chat-list {
+  overflow-y: auto;
+  flex: 1;
+}
+</style>

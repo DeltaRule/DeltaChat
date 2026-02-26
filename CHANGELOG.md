@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Sidebar is now the single panel** – the navigation drawer (`AppNavigation.vue`) contains the full chat list (New Chat button, search, All/Saved filter, chat items with bookmark/delete actions, folder groups). The separate internal sidebar that was embedded inside `ChatInterface.vue` has been removed entirely.
 - **Welcome screen** – when no chat is active, the main area now shows a large Δ logo, a greeting heading, and a subtitle. Typing a message and pressing Enter automatically creates a new chat and sends the message without any dialog.
 - **`ai_models` collection** – named model configurations that users select when starting a chat. Each config stores display name, type (`model`|`webhook`|`agent`), provider, provider model, system prompt, temperature, max tokens, linked knowledge stores, and linked tools.
 - **`agents` collection** – reusable agent definitions with system prompt, provider, knowledge stores (each auto-gains a `retrieve()` tool), and tools.
@@ -34,9 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Knowledge Stores removed from the main left navigation (it lives in Settings now).
 
 ### Changed
-- `ChatInterface.vue` – input area is always visible (not hidden when no chat is selected); `sendMessage()` auto-creates a chat when `currentChatId` is null; toolbar model selector always visible on desktop.
-- `AppNavigation.vue` – sidebar nav item changed from `mdi-chat / Chat` to `mdi-plus / New Chat`; collapsed rail shows only the logo, no chevron button.
-- `AppNavigation.vue` – sidebar only shows the Chat workspace icon; Knowledge is accessible via Settings.
+- `ChatInterface.vue` – internal `<aside class="chat-sidebar">` removed; component is now the chat area only (toolbar + messages + input). Input area always visible; `sendMessage()` auto-creates a chat when `currentChatId` is null; toolbar model selector always visible on desktop; `loadMessages` triggered by watching `currentChatId`.
+- `AppNavigation.vue` – takes over chat list responsibilities (search, filter, chat items, folder groups, bookmark/delete); collapsed rail shows `+` icon only; expanded shows full chat UI; clicking a chat item selects it and loads its messages.
 - `router/index.js` – removed `/knowledge` route; only `/` and `/settings` remain.
 - `chat.js` store – `loadMessages` now calls `GET /api/chats/:id` and reads `.messages` from the response (fixing the previous 404 on a non-existent `/messages` sub-path).
 - `schema.ts` – added `modelId`, `folder`, `bookmarked` fields to the `chats` schema.
