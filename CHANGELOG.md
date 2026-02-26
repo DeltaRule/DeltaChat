@@ -35,8 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Knowledge Stores removed from the main left navigation (it lives in Settings now).
 
 ### Changed
+- `App.vue` – `AppNavigation` (chat sidebar) is now **hidden on the `/settings` route**; the nav-icon is also hidden on settings, and the DeltaChat brand title is always shown in the app bar when on settings.
 - `ChatInterface.vue` – attachment button now sits **left of the send button** in a horizontal row (previously stacked vertically above the send button).
 - `SettingsPanel.vue` – settings left sidebar now supports collapsible rail mode matching the chat sidebar pattern: collapsed shows icons only (56 px) with a `›` chevron to expand; expanded shows icon + text (200 px) with a `‹` chevron to collapse; active tab is always highlighted.
+- `docs/screenshots` – removed 7 stale/unreferenced screenshots (`chat-light.png`, `chat-collapsed.png`, `knowledge.png`, `settings-agents.png`, `settings-mobile.png`, `settings-knowledge.png`, `settings-tools.png`); all 6 remaining screenshots refreshed to reflect current UI.
 - `ChatInterface.vue` – internal `<aside class="chat-sidebar">` removed; component is now the chat area only (toolbar + messages + input). Input area always visible; `sendMessage()` auto-creates a chat when `currentChatId` is null; toolbar model selector always visible on desktop; `loadMessages` triggered by watching `currentChatId`.
 - `AppNavigation.vue` – takes over chat list responsibilities (search, filter, chat items, folder groups, bookmark/delete); collapsed rail shows `+` icon only; expanded shows full chat UI; clicking a chat item selects it and loads its messages.
 - `router/index.js` – removed `/knowledge` route; only `/` and `/settings` remain.
