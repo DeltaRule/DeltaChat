@@ -22,6 +22,7 @@ interface StreamCallbacks {
 
 interface SendMessageOpts {
   model?: string;
+  modelId?: string;
   temperature?: number;
   maxTokens?: number;
   provider?: string;
@@ -76,8 +77,11 @@ class ChatService {
   async createChat(data: Record<string, unknown> = {}): Promise<Entity> {
     return this._db.createChat({
       id: uuidv4(),
-      title: (data['title'] as string | undefined) ?? 'New Chat',
+      title: (data['title'] as string | undefined) ?? (data['name'] as string | undefined) ?? 'New Chat',
       model: (data['model'] as string | null | undefined) ?? null,
+      modelId: (data['modelId'] as string | null | undefined) ?? null,
+      folder: (data['folder'] as string | null | undefined) ?? null,
+      bookmarked: (data['bookmarked'] as boolean | undefined) ?? false,
       systemPrompt: (data['systemPrompt'] as string | null | undefined) ?? null,
       knowledgeStoreIds: (data['knowledgeStoreIds'] as string[] | undefined) ?? [],
       webhookId: (data['webhookId'] as string | null | undefined) ?? null,
@@ -125,11 +129,11 @@ class ChatService {
       content: userContent,
     });
 
-    const messages = await this._buildMessages(chat, userContent);
+    const resolved = await this._resolveModelConfig(opts, chat);
+    const messages = await this._buildMessages(chat, userContent, resolved.systemPromptOverride, resolved.knowledgeStoreIdsOverride);
 
     const provider = this._resolveProvider(opts);
-    const modelOpts = this._buildModelOpts(chat, opts);
-    const result = await provider.chat(messages, modelOpts);
+    const result = await provider.chat(messages, resolved.modelOpts);
 
     const assistantMessage = await this._db.createMessage({
       id: uuidv4(),
@@ -168,13 +172,13 @@ class ChatService {
       content: userContent,
     });
 
-    const messages = await this._buildMessages(chat, userContent);
+    const resolved = await this._resolveModelConfig(opts, chat);
+    const messages = await this._buildMessages(chat, userContent, resolved.systemPromptOverride, resolved.knowledgeStoreIdsOverride);
     const provider = this._resolveProvider(opts);
-    const modelOpts = this._buildModelOpts(chat, opts);
 
     let full = '';
     try {
-      for await (const chunk of provider.stream(messages, modelOpts)) {
+      for await (const chunk of provider.stream(messages, resolved.modelOpts)) {
         full += chunk;
         onChunk(chunk);
       }
@@ -184,7 +188,7 @@ class ChatService {
         chatId,
         role: 'assistant',
         content: full,
-        model: (opts.model ?? chat['model'] ?? null) as string | null,
+        model: (resolved.modelOpts['model'] ?? opts.model ?? chat['model'] ?? null) as string | null,
       });
 
       onDone(full, assistantMessage);
@@ -195,22 +199,26 @@ class ChatService {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
-  private async _buildMessages(chat: Entity & { messages: Entity[] }, newUserContent: string): Promise<ChatMessage[]> {
+  private async _buildMessages(
+    chat: Entity & { messages: Entity[] },
+    newUserContent: string,
+    systemPromptOverride?: string,
+    knowledgeStoreIdsOverride?: string[]
+  ): Promise<ChatMessage[]> {
     const history: ChatMessage[] = (chat.messages ?? []).map((m) => ({
       role: m['role'] as string,
       content: m['content'] as string,
     }));
 
+    const knowledgeStoreIds = knowledgeStoreIdsOverride
+      ?? (Array.isArray(chat['knowledgeStoreIds']) ? (chat['knowledgeStoreIds'] as string[]) : []);
+
     let ragContext = '';
-    if (
-      this._knowledgeService &&
-      Array.isArray(chat['knowledgeStoreIds']) &&
-      (chat['knowledgeStoreIds'] as string[]).length > 0
-    ) {
+    if (this._knowledgeService && knowledgeStoreIds.length > 0) {
       try {
         const results = await this._knowledgeService.retrieve(
           newUserContent,
-          chat['knowledgeStoreIds'] as string[],
+          knowledgeStoreIds,
           { topK: 5 }
         );
         if (results.length > 0) {
@@ -225,7 +233,10 @@ class ChatService {
 
     const messages: ChatMessage[] = [];
 
-    const systemPrompt = (chat['systemPrompt'] as string | null | undefined) ?? 'You are a helpful AI assistant.';
+    const systemPrompt =
+      systemPromptOverride ??
+      (chat['systemPrompt'] as string | null | undefined) ??
+      'You are a helpful AI assistant.';
     messages.push({ role: 'system', content: systemPrompt + ragContext });
 
     messages.push(...history);
@@ -245,6 +256,49 @@ class ChatService {
       temperature: opts.temperature,
       maxTokens: opts.maxTokens,
     };
+  }
+
+  private async _resolveModelConfig(opts: SendMessageOpts, chat: Entity): Promise<{
+    systemPromptOverride?: string;
+    knowledgeStoreIdsOverride?: string[];
+    modelOpts: Record<string, unknown>;
+  }> {
+    const modelId = opts.modelId ?? (chat['modelId'] as string | undefined);
+    if (!modelId) {
+      return { modelOpts: this._buildModelOpts(chat, opts) };
+    }
+    try {
+      const aiModel = await this._db.getAiModel(modelId);
+      if (!aiModel) return { modelOpts: this._buildModelOpts(chat, opts) };
+
+      // If model points to an agent, load the agent config
+      if (aiModel['type'] === 'agent' && aiModel['agentId']) {
+        const agent = await this._db.getAgent(aiModel['agentId'] as string);
+        if (agent) {
+          return {
+            systemPromptOverride: agent['systemPrompt'] as string,
+            knowledgeStoreIdsOverride: (agent['knowledgeStoreIds'] as string[]) ?? [],
+            modelOpts: {
+              model: (agent['providerModel'] as string) ?? opts.model ?? chat['model'] ?? undefined,
+              temperature: (agent['temperature'] as number | null) ?? opts.temperature,
+              maxTokens: (agent['maxTokens'] as number | null) ?? opts.maxTokens,
+            },
+          };
+        }
+      }
+
+      return {
+        systemPromptOverride: (aiModel['systemPrompt'] as string | null) ?? undefined,
+        knowledgeStoreIdsOverride: (aiModel['knowledgeStoreIds'] as string[]) ?? undefined,
+        modelOpts: {
+          model: (aiModel['providerModel'] as string) ?? opts.model ?? chat['model'] ?? undefined,
+          temperature: (aiModel['temperature'] as number | null) ?? opts.temperature,
+          maxTokens: (aiModel['maxTokens'] as number | null) ?? opts.maxTokens,
+        },
+      };
+    } catch {
+      return { modelOpts: this._buildModelOpts(chat, opts) };
+    }
   }
 
   private async _assertExists(id: string): Promise<Entity> {

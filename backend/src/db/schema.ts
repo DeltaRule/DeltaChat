@@ -10,6 +10,7 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
     required: ['id', 'title'],
     fields: {
       id: 'string', title: 'string', model: 'string|null',
+      modelId: 'string|null', folder: 'string|null', bookmarked: 'boolean',
       systemPrompt: 'string|null', knowledgeStoreIds: 'Array<string>',
       webhookId: 'string|null', metadata: 'object',
       createdAt: 'string (ISO 8601)', updatedAt: 'string (ISO 8601)',
@@ -53,6 +54,36 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
   settings: {
     required: ['id'],
     fields: { id: '"global"' },
+  },
+  ai_models: {
+    required: ['id', 'name'],
+    fields: {
+      id: 'string', name: 'string', description: 'string|null',
+      type: '"model"|"webhook"|"agent"',
+      provider: 'string|null', providerModel: 'string|null',
+      systemPrompt: 'string|null', temperature: 'number|null', maxTokens: 'number|null',
+      knowledgeStoreIds: 'Array<string>', toolIds: 'Array<string>',
+      webhookId: 'string|null', agentId: 'string|null', enabled: 'boolean',
+      createdAt: 'string (ISO 8601)', updatedAt: 'string (ISO 8601)',
+    },
+  },
+  agents: {
+    required: ['id', 'name'],
+    fields: {
+      id: 'string', name: 'string', description: 'string|null',
+      systemPrompt: 'string', provider: 'string|null', providerModel: 'string|null',
+      knowledgeStoreIds: 'Array<string>', toolIds: 'Array<string>',
+      temperature: 'number|null', maxTokens: 'number|null',
+      createdAt: 'string (ISO 8601)', updatedAt: 'string (ISO 8601)',
+    },
+  },
+  tools: {
+    required: ['id', 'name', 'type'],
+    fields: {
+      id: 'string', name: 'string', description: 'string|null',
+      type: '"mcp"|"python"|"typescript"', config: 'object', enabled: 'boolean',
+      createdAt: 'string (ISO 8601)', updatedAt: 'string (ISO 8601)',
+    },
   },
 };
 

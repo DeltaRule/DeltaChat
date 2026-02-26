@@ -318,6 +318,27 @@ export class DeltaDatabaseAdapter {
   updateWebhook(id: string, fields: Record<string, unknown>): Promise<Entity | null> { return this._backend.update('webhooks', id, fields); }
   deleteWebhook(id: string): Promise<DeleteResult> { return this._backend.delete('webhooks', id); }
 
+  // AI Models (named configs users chat with)
+  createAiModel(doc: Record<string, unknown>): Promise<Entity> { return this._backend.insert('ai_models', doc); }
+  listAiModels(): Promise<Entity[]> { return this._backend.findAll('ai_models'); }
+  getAiModel(id: string): Promise<Entity | null> { return this._backend.findById('ai_models', id); }
+  updateAiModel(id: string, fields: Record<string, unknown>): Promise<Entity | null> { return this._backend.update('ai_models', id, fields); }
+  deleteAiModel(id: string): Promise<DeleteResult> { return this._backend.delete('ai_models', id); }
+
+  // Agents
+  createAgent(doc: Record<string, unknown>): Promise<Entity> { return this._backend.insert('agents', doc); }
+  listAgents(): Promise<Entity[]> { return this._backend.findAll('agents'); }
+  getAgent(id: string): Promise<Entity | null> { return this._backend.findById('agents', id); }
+  updateAgent(id: string, fields: Record<string, unknown>): Promise<Entity | null> { return this._backend.update('agents', id, fields); }
+  deleteAgent(id: string): Promise<DeleteResult> { return this._backend.delete('agents', id); }
+
+  // Tools
+  createTool(doc: Record<string, unknown>): Promise<Entity> { return this._backend.insert('tools', doc); }
+  listTools(): Promise<Entity[]> { return this._backend.findAll('tools'); }
+  getTool(id: string): Promise<Entity | null> { return this._backend.findById('tools', id); }
+  updateTool(id: string, fields: Record<string, unknown>): Promise<Entity | null> { return this._backend.update('tools', id, fields); }
+  deleteTool(id: string): Promise<DeleteResult> { return this._backend.delete('tools', id); }
+
   // Settings
   async getSettings(): Promise<Entity> {
     return (await this._backend.findById('settings', 'global')) ?? { id: 'global' };
