@@ -1,0 +1,31 @@
+{
+  "name": "deltachat",
+  "version": "1.0.0",
+  "description": "A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[DeltaDatabase](https://github.com/DeltaRule/DeltaDatabase)** as the sole primary data store.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "test:report": "npx playwright show-report e2e/report",
+    "test:screenshots": "node -e \"const fs=require('fs');const d='e2e/screenshots';if(fs.existsSync(d))fs.readdirSync(d).filter(f=>f.endsWith('.png')).forEach(f=>console.log(f));else console.log('No screenshots yet')\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DeltaRule/DeltaChat.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DeltaRule/DeltaChat/issues"
+  },
+  "homepage": "https://github.com/DeltaRule/DeltaChat#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "playwright": "^1.58.2"
+  }
+}

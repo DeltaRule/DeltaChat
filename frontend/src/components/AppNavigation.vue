@@ -11,18 +11,18 @@
   >
     <!-- ── Desktop header ─────────────────────────────────── -->
     <template v-if="!mobile">
-      <!-- Collapsed: logo only — click to expand -->
-      <div v-if="rail" class="d-flex justify-center align-center py-3">
-        <v-avatar
-          color="primary"
-          size="28"
-          rounded="sm"
-          style="cursor:pointer"
-          aria-label="Expand sidebar"
-          @click="$emit('toggle-rail')"
-        >
+      <!-- Collapsed: chevron-right to expand -->
+      <div v-if="rail" class="d-flex flex-column align-center py-3" style="gap: 4px;">
+        <v-avatar color="primary" size="28" rounded="sm" style="flex-shrink:0">
           <v-icon icon="mdi-delta" size="16" color="white" />
         </v-avatar>
+        <v-btn
+          icon="mdi-chevron-right"
+          variant="text"
+          size="small"
+          aria-label="Expand sidebar"
+          @click="$emit('toggle-rail')"
+        />
       </div>
       <!-- Expanded: logo + text + collapse chevron -->
       <div v-else class="d-flex align-center px-3" style="min-height: 48px;">
@@ -74,7 +74,9 @@
           color="primary"
           prepend-icon="mdi-plus"
           size="small"
-          class="mb-2"
+          variant="flat"
+          class="mb-2 new-chat-btn"
+          rounded="lg"
           @click="goToNewChat"
         >
           New Chat
@@ -85,8 +87,11 @@
           density="compact"
           hide-details
           prepend-inner-icon="mdi-magnify"
-          variant="outlined"
+          variant="solo-filled"
+          flat
           clearable
+          rounded="lg"
+          class="search-field"
         />
       </div>
 
@@ -94,11 +99,13 @@
         v-model="chatFilter"
         mandatory
         density="compact"
-        class="mx-2 mb-1 flex-shrink-0"
+        class="mx-2 mb-1 flex-shrink-0 filter-toggle"
         style="width: calc(100% - 16px);"
+        rounded="lg"
+        color="primary"
       >
-        <v-btn value="all" size="x-small" class="flex-1">All</v-btn>
-        <v-btn value="bookmarked" size="x-small" class="flex-1">
+        <v-btn value="all" size="x-small" class="flex-1" rounded="lg">All</v-btn>
+        <v-btn value="bookmarked" size="x-small" class="flex-1" rounded="lg">
           <v-icon size="14" class="mr-1">mdi-bookmark</v-icon>Saved
         </v-btn>
       </v-btn-toggle>
@@ -289,5 +296,41 @@ onMounted(async () => {
 .sidebar-chat-list {
   overflow-y: auto;
   flex: 1;
+}
+
+.new-chat-btn {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  box-shadow: 0 2px 8px rgba(124, 77, 255, 0.2);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  color: #fff !important;
+}
+
+.new-chat-btn:hover {
+  box-shadow: 0 4px 16px rgba(124, 77, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.search-field :deep(.v-field) {
+  border-radius: 12px;
+  background: rgba(var(--v-theme-surface-variant), 0.4);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.search-field :deep(.v-field:focus-within) {
+  background: rgba(var(--v-theme-surface-variant), 0.7);
+  box-shadow: 0 2px 12px rgba(124, 77, 255, 0.08);
+}
+
+.filter-toggle {
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.filter-toggle .v-btn {
+  text-transform: none;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.2px;
 }
 </style>

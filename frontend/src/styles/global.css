@@ -1,0 +1,275 @@
+/* ── Global styles for DeltaChat ────────────────────────────────── */
+
+/* Smooth font rendering */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* ── Custom scrollbars ──────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 77, 255, 0.25);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 77, 255, 0.45);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 77, 255, 0.25) transparent;
+}
+
+/* ── Smooth transitions ─────────────────────────────────────────── */
+.v-card,
+.v-btn,
+.v-list-item,
+.v-chip {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* ── Better card styling (glassmorphism) ────────────────────────── */
+.v-theme--dark .v-card {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(26, 26, 36, 0.85) !important;
+  backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.v-theme--dark .v-card:hover {
+  border-color: rgba(124, 77, 255, 0.18);
+  box-shadow: 0 8px 32px rgba(124, 77, 255, 0.08), 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.v-theme--light .v-card {
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04) !important;
+}
+
+.v-theme--light .v-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* ── Better list items ──────────────────────────────────────────── */
+.v-list-item--active {
+  background: linear-gradient(135deg, rgba(124, 77, 255, 0.15), rgba(124, 77, 255, 0.08)) !important;
+  border-left: 3px solid rgba(124, 77, 255, 0.8);
+  margin-left: 0;
+  border-radius: 0 8px 8px 0 !important;
+}
+
+.v-list-item:hover:not(.v-list-item--active) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.v-theme--light .v-list-item:hover:not(.v-list-item--active) {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* ── App bar polish ─────────────────────────────────────────────── */
+.v-app-bar {
+  backdrop-filter: blur(20px) saturate(1.3);
+}
+
+.v-theme--dark .v-app-bar {
+  background: rgba(15, 15, 19, 0.8) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.v-theme--light .v-app-bar {
+  background: rgba(255, 255, 255, 0.88) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* ── Navigation drawer ─────────────────────────────────────────── */
+.v-theme--dark .v-navigation-drawer {
+  background: rgba(var(--v-theme-surface), 0.95) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(12px);
+}
+
+.v-theme--light .v-navigation-drawer {
+  border-right: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ── Button polish ──────────────────────────────────────────────── */
+.v-btn--variant-text:hover {
+  background: rgba(124, 77, 255, 0.1);
+}
+
+.v-btn--variant-tonal {
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.v-btn--variant-tonal:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(124, 77, 255, 0.2);
+}
+
+/* ── Dialog polish ──────────────────────────────────────────────── */
+.v-overlay__content > .v-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.v-theme--dark .v-dialog .v-card {
+  background: rgba(28, 28, 40, 0.95) !important;
+  backdrop-filter: blur(24px) saturate(1.5);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ── Inputs polish ──────────────────────────────────────────────── */
+.v-theme--dark .v-field--variant-outlined .v-field__outline {
+  opacity: 0.25;
+}
+
+.v-theme--dark .v-field--variant-outlined:hover .v-field__outline {
+  opacity: 0.45;
+}
+
+.v-theme--dark .v-field--variant-outlined:focus-within .v-field__outline {
+  opacity: 1;
+}
+
+/* ── Tooltip styling ────────────────────────────────────────────── */
+.v-tooltip > .v-overlay__content {
+  background: rgba(24, 24, 36, 0.96) !important;
+  font-size: 0.75rem;
+  padding: 6px 12px;
+  border-radius: 8px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ── Chip polish ────────────────────────────────────────────────── */
+.v-chip {
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.v-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* ── Selection color ────────────────────────────────────────────── */
+::selection {
+  background: rgba(124, 77, 255, 0.3);
+  color: inherit;
+}
+
+/* ── Focus ring ─────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid rgba(124, 77, 255, 0.5);
+  outline-offset: 2px;
+}
+
+/* ── Animated gradient keyframes ────────────────────────────────── */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba(124, 77, 255, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(124, 77, 255, 0.35); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+/* ── Utility classes ────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(26, 26, 36, 0.6) !important;
+  backdrop-filter: blur(20px) saturate(1.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.v-theme--light .glass-card {
+  background: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(20px) saturate(1.3) !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #7C4DFF 0%, #B388FF 50%, #7C4DFF 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradientShift 4s ease-in-out infinite;
+}
+
+.glow-primary {
+  box-shadow: 0 4px 20px rgba(124, 77, 255, 0.3);
+}
+
+.glow-primary:hover {
+  box-shadow: 0 6px 28px rgba(124, 77, 255, 0.4);
+}
+
+/* ── V-Switch custom ────────────────────────────────────────────── */
+/* Force full opacity on ALL switch tracks so they're always visible */
+.v-switch .v-switch__track {
+  opacity: 1 !important;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+/* OFF state — dark theme: neutral gray track with visible border */
+.v-theme--dark .v-switch .v-switch__track {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border: 2px solid rgba(255, 255, 255, 0.3) !important;
+}
+
+/* OFF state — light theme */
+.v-theme--light .v-switch .v-switch__track {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+  border: 2px solid rgba(0, 0, 0, 0.2) !important;
+}
+
+/* ON state — override with solid primary color + remove border */
+.v-theme--dark .v-selection-control--dirty .v-switch__track {
+  background-color: rgb(124, 77, 255) !important;
+  border-color: rgb(124, 77, 255) !important;
+}
+
+.v-theme--light .v-selection-control--dirty .v-switch__track {
+  background-color: rgb(124, 77, 255) !important;
+  border-color: rgb(124, 77, 255) !important;
+}
+
+/* Thumb — always fully visible */
+.v-switch .v-switch__thumb {
+  opacity: 1 !important;
+}
+
+.v-switch--inset .v-switch__track {
+  border-radius: 12px;
+}

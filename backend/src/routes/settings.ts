@@ -2,6 +2,7 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { getAdapter } from '../db/DeltaDatabaseAdapter';
+import { clearProviderCache } from '../services/ChatService';
 
 const router = Router();
 
@@ -21,6 +22,8 @@ router.put('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getAdapter();
     const settings = await db.updateSettings(req.body as Record<string, unknown>);
+    // Clear cached providers so new settings take effect immediately
+    clearProviderCache();
     res.json(settings);
   } catch (err) {
     next(err);

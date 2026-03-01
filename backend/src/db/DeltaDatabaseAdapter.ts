@@ -5,15 +5,12 @@ import { v4 as uuidv4 } from 'uuid';
 import config from '../config';
 import { validate } from './schema';
 
-const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface Entity extends Record<string, unknown> {
   id: string;
   createdAt?: string;
   updatedAt?: string;
-  _deleted?: boolean;
 }
 
 export interface IndexDoc {
@@ -29,85 +26,78 @@ export interface DeleteResult {
   ok: boolean;
 }
 
-export interface LoginResponse {
-  token: string;
-  expires_at?: string;
-}
-
 // ── DeltaDatabaseClient ───────────────────────────────────────────────────────
+//
+// Uses DeltaDatabase REST API (https://deltadatabase.readthedocs.io/).
+//
+// Authentication: The admin key (or a scoped dk_… API key) is used directly as
+// the Bearer token. No login step is needed — the key is static and does not
+// expire unless explicitly set when creating a scoped API key.
+//
+// Data model: A single DeltaDatabase "database" is used. Collections are
+// simulated with key prefixes, e.g. `chats:<id>`, `messages:<id>`.
+// A per-collection index entity (`<collection>:_index`) keeps a list of all
+// active keys so we can enumerate them.
+// ───────────────────────────────────────────────────────────────────────────────
 
 export class DeltaDatabaseClient {
   public readonly baseUrl: string;
-  public readonly adminKey: string | null;
+  public readonly apiKey: string;
   public readonly database: string;
-  public _token: string | null = null;
-  public _tokenExpiry: number | null = null;
   public readonly _http: AxiosInstance;
 
-  constructor(baseUrl: string, adminKey: string | null, database: string) {
+  constructor(baseUrl: string, apiKey: string, database: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
-    this.adminKey = adminKey ?? null;
-    this.database = database ?? 'deltachat';
+    this.apiKey = apiKey;
+    this.database = database || 'deltachat';
     this._http = axios.create({ baseURL: this.baseUrl, timeout: 15000 });
   }
 
-  async _ensureToken(): Promise<string> {
-    const needsRefresh =
-      !this._token ||
-      (this._tokenExpiry !== null && Date.now() > this._tokenExpiry - TOKEN_REFRESH_MARGIN_MS);
-
-    if (needsRefresh) {
-      const body = this.adminKey ? { key: this.adminKey } : { client_id: 'deltachat' };
-      const { data } = await this._http.post<LoginResponse>('/api/login', body);
-      this._token = data.token;
-      this._tokenExpiry = data.expires_at ? new Date(data.expires_at).getTime() : null;
-    }
-    return this._token!;
+  /** Authorization header — admin key / API key used directly as Bearer token. */
+  private _headers(): Record<string, string> {
+    return { Authorization: `Bearer ${this.apiKey}` };
   }
 
-  async _authHeader(): Promise<Record<string, string>> {
-    return { Authorization: `Bearer ${await this._ensureToken()}` };
-  }
+  // ── Low-level DeltaDatabase operations ────────────────────────────────────
 
+  /** PUT /entity/{database} — create or update one or more entities. */
   async _put(entities: Record<string, unknown>): Promise<void> {
-    const headers = await this._authHeader();
-    try {
-      await this._http.put(`/entity/${this.database}`, entities, { headers });
-    } catch (err) {
-      const axErr = err as AxiosError;
-      if (axErr.response?.status === 401) {
-        this._token = null;
-        const h = await this._authHeader();
-        await this._http.put(`/entity/${this.database}`, entities, { headers: h });
-      } else {
-        throw err;
-      }
-    }
+    await this._http.put(`/entity/${this.database}`, entities, {
+      headers: this._headers(),
+    });
   }
 
+  /** GET /entity/{database}?key=… — retrieve a single entity (or null). */
   async _get(key: string): Promise<unknown> {
-    const headers = await this._authHeader();
     try {
       const { data } = await this._http.get<unknown>(`/entity/${this.database}`, {
         params: { key },
-        headers,
+        headers: this._headers(),
       });
       return data;
     } catch (err) {
       const axErr = err as AxiosError;
       if (axErr.response?.status === 404) return null;
-      if (axErr.response?.status === 401) {
-        this._token = null;
-        const h = await this._authHeader();
-        const { data } = await this._http.get<unknown>(`/entity/${this.database}`, {
-          params: { key },
-          headers: h,
-        });
-        return data;
-      }
       throw err;
     }
   }
+
+  /** DELETE /entity/{database}?key=… — permanently delete a single entity. */
+  async _deleteEntity(key: string): Promise<void> {
+    try {
+      await this._http.delete(`/entity/${this.database}`, {
+        params: { key },
+        headers: this._headers(),
+      });
+    } catch (err) {
+      const axErr = err as AxiosError;
+      // Treat 404 as success (entity already gone)
+      if (axErr.response?.status === 404) return;
+      throw err;
+    }
+  }
+
+  // ── Index management ──────────────────────────────────────────────────────
 
   async _readIndex(collection: string): Promise<IndexDoc> {
     return ((await this._get(`${collection}:_index`)) as IndexDoc | null) ?? { keys: [] };
@@ -130,6 +120,8 @@ export class DeltaDatabaseClient {
     }
   }
 
+  // ── Secondary index management ────────────────────────────────────────────
+
   async _addToSecondaryIndex(collection: string, field: string, value: unknown, id: string): Promise<void> {
     const key = `${collection}:_idx:${field}:${String(value)}`;
     const idx = ((await this._get(key)) as IndexDoc | null) ?? { keys: [] };
@@ -148,6 +140,8 @@ export class DeltaDatabaseClient {
       await this._put({ [key]: idx });
     }
   }
+
+  // ── CRUD operations ───────────────────────────────────────────────────────
 
   async insert(collection: string, doc: Record<string, unknown>, secondaryIndexFields: string[] = []): Promise<Entity> {
     const now = new Date().toISOString();
@@ -176,12 +170,12 @@ export class DeltaDatabaseClient {
     const idx = await this._readIndex(collection);
     if (!idx.keys.length) return [];
     const docs = await Promise.all(idx.keys.map((id) => this._get(`${collection}:${id}`)));
-    return (docs as (Entity | null)[]).filter((d): d is Entity => !!d && !d._deleted);
+    return (docs as (Entity | null)[]).filter((d): d is Entity => !!d);
   }
 
   async findById(collection: string, id: string): Promise<Entity | null> {
     const doc = (await this._get(`${collection}:${id}`)) as Entity | null;
-    return doc && !doc._deleted ? doc : null;
+    return doc ?? null;
   }
 
   async update(collection: string, id: string, fields: Record<string, unknown>): Promise<Entity | null> {
@@ -202,13 +196,8 @@ export class DeltaDatabaseClient {
     const existing = await this.findById(collection, id);
     if (!existing) return { ok: false };
 
-    await this._put({
-      [`${collection}:${id}`]: {
-        ...existing,
-        _deleted: true,
-        updatedAt: new Date().toISOString(),
-      },
-    });
+    // Use proper DELETE /entity/{database}?key=… endpoint
+    await this._deleteEntity(`${collection}:${id}`);
     await this._removeFromIndex(collection, id);
 
     for (const { field, value } of secondaryIndexes) {
@@ -228,7 +217,7 @@ export class DeltaDatabaseClient {
     let docs: Entity[];
     if (idx.keys.length > 0) {
       const fetched = await Promise.all(idx.keys.map((id) => this._get(`${collection}:${id}`)));
-      docs = (fetched as (Entity | null)[]).filter((d): d is Entity => !!d && !d._deleted);
+      docs = (fetched as (Entity | null)[]).filter((d): d is Entity => !!d);
     } else {
       docs = await this.findAll(collection);
     }
@@ -250,8 +239,14 @@ export class DeltaDatabaseAdapter {
     if (!config.deltaDb.url) {
       throw new Error(
         '[DeltaDB] DELTA_DB_URL is required. Start DeltaDatabase with:\n' +
-        '  docker run -d --name deltadatabase -p 8080:8080 -e ADMIN_KEY=secretkey donti/deltadatabase\n' +
-        '  Then set DELTA_DB_URL=http://127.0.0.1:8080 and DELTA_DB_ADMIN_KEY=secretkey'
+        '  docker run -d --name deltadatabase -p 8080:8080 -e ADMIN_KEY=changeme donti/deltadatabase\n' +
+        '  Then set DELTA_DB_URL=http://localhost:8080 and DELTA_DB_ADMIN_KEY=changeme'
+      );
+    }
+    if (!config.deltaDb.adminKey) {
+      throw new Error(
+        '[DeltaDB] DELTA_DB_ADMIN_KEY is required. The admin key (or a dk_… API key)\n' +
+        '  is used directly as the Bearer token — no login step needed.'
       );
     }
     this._backend = new DeltaDatabaseClient(
@@ -260,8 +255,8 @@ export class DeltaDatabaseAdapter {
       config.deltaDb.database
     );
     console.log(
-      `[DeltaDB] Connected to DeltaDatabase at ${config.deltaDb.url}` +
-      ` (database: "${config.deltaDb.database}")`
+      `[DeltaDB] Using DeltaDatabase at ${config.deltaDb.url}` +
+      ` (database: "${config.deltaDb.database}", auth: Bearer <admin-key>)`
     );
   }
 

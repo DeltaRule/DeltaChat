@@ -7,14 +7,13 @@
       @toggle-rail="rail = !rail"
     />
 
-    <v-app-bar elevation="2" density="compact">
-      <v-app-bar-nav-icon v-if="!isSettings" @click="toggleDrawer" />
+    <v-app-bar elevation="0" density="compact">
       <!-- Only show brand in app bar when sidebar is collapsed or on mobile -->
       <v-app-bar-title v-if="isSettings || rail || mobile" class="font-weight-bold text-body-1">
-        <v-avatar color="primary" size="26" rounded="sm" class="mr-2" style="flex-shrink:0">
-          <v-icon icon="mdi-delta" size="15" color="white" />
+        <v-avatar color="primary" size="30" rounded="lg" class="mr-2" style="flex-shrink:0; box-shadow: 0 2px 10px rgba(124, 77, 255, 0.35);">
+          <v-icon icon="mdi-delta" size="17" color="white" />
         </v-avatar>
-        DeltaChat
+        <span style="background: linear-gradient(135deg, #B388FF, #7C4DFF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">DeltaChat</span>
       </v-app-bar-title>
       <v-spacer />
       <v-tooltip :text="connected ? 'Connected' : 'Disconnected'" location="bottom">
@@ -46,6 +45,21 @@
     <v-main>
       <router-view />
     </v-main>
+
+    <!-- Global snackbar for notifications -->
+    <v-snackbar
+      v-model="notify.show"
+      :color="notify.color"
+      :timeout="notify.timeout"
+      location="bottom right"
+      rounded="lg"
+      class="global-snackbar"
+    >
+      {{ notify.message }}
+      <template #actions>
+        <v-btn variant="text" size="small" @click="notify.show = false">Close</v-btn>
+      </template>
+    </v-snackbar>
   </v-app>
 </template>
 
@@ -54,12 +68,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useRoute } from 'vue-router'
 import AppNavigation from './components/AppNavigation.vue'
+import { useNotificationStore } from './stores/notification'
 import axios from 'axios'
 
 const { mobile } = useDisplay()
 const route = useRoute()
+const notify = useNotificationStore()
 
-const theme = ref('dark')
+const theme = ref(localStorage.getItem('deltachat-theme') || 'dark')
 const drawer = ref(true)
 const rail = ref(true)
 const connected = ref(false)
@@ -71,6 +87,7 @@ let interval
 
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  localStorage.setItem('deltachat-theme', theme.value)
 }
 
 function toggleDrawer() {
@@ -83,7 +100,7 @@ function toggleDrawer() {
 
 async function checkConnection() {
   try {
-    await axios.get(`${API}/api/health`, { timeout: 3000 })
+    await axios.get(`${API}/health`, { timeout: 3000 })
     connected.value = true
   } catch {
     connected.value = false

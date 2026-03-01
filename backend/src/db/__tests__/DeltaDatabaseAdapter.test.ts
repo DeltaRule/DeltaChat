@@ -22,6 +22,17 @@ describe('DeltaDatabaseAdapter', () => {
       jest.resetModules();
     });
 
+    test('throws if DELTA_DB_ADMIN_KEY is not set', () => {
+      jest.resetModules();
+      const savedKey = process.env['DELTA_DB_ADMIN_KEY'];
+      delete process.env['DELTA_DB_ADMIN_KEY'];
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { DeltaDatabaseAdapter: Adapter } = require('../DeltaDatabaseAdapter') as { DeltaDatabaseAdapter: new () => DeltaDatabaseAdapter };
+      expect(() => new Adapter()).toThrow('DELTA_DB_ADMIN_KEY is required');
+      process.env['DELTA_DB_ADMIN_KEY'] = savedKey;
+      jest.resetModules();
+    });
+
     test('mode always returns "deltadatabase"', () => {
       const adapter = new DeltaDatabaseAdapter();
       expect(adapter.mode).toBe('deltadatabase');

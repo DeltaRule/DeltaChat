@@ -2,8 +2,15 @@
   <div class="settings-layout">
     <!-- Left sidebar — collapsible rail (same pattern as AppNavigation) -->
     <aside class="settings-nav" :class="{ 'settings-nav--rail': settingsRail }">
-      <!-- Collapsed: single chevron-right to expand -->
-      <div v-if="settingsRail" class="d-flex justify-center align-center py-3">
+      <!-- Collapsed: back arrow + chevron-right to expand -->
+      <div v-if="settingsRail" class="d-flex flex-column align-center py-3" style="gap: 4px;">
+        <v-btn
+          icon="mdi-arrow-left"
+          variant="text"
+          size="small"
+          aria-label="Back to chat"
+          to="/"
+        />
         <v-btn
           icon="mdi-chevron-right"
           variant="text"
@@ -12,9 +19,16 @@
           @click="settingsRail = false"
         />
       </div>
-      <!-- Expanded: "Settings" title + collapse chevron -->
+      <!-- Expanded: back arrow + "Settings" title + collapse chevron -->
       <div v-else class="d-flex align-center px-3" style="min-height: 48px;">
-        <v-icon icon="mdi-cog" size="18" class="mr-2" style="opacity:0.7;flex-shrink:0" />
+        <v-btn
+          icon="mdi-arrow-left"
+          variant="text"
+          size="small"
+          aria-label="Back to chat"
+          to="/"
+          class="mr-1"
+        />
         <span class="text-body-2 font-weight-bold flex-grow-1">Settings</span>
         <v-btn
           icon="mdi-chevron-left"
@@ -57,7 +71,7 @@
         <v-row>
           <v-col v-for="provider in providers" :key="provider.key" cols="12" sm="6">
             <v-card elevation="1">
-              <v-card-title class="d-flex align-center py-3 px-4">
+              <div class="d-flex align-center py-3 px-4">
                 <v-avatar
                   :color="provider.iconColor + ICON_BG_ALPHA"
                   size="36"
@@ -67,12 +81,12 @@
                 >
                   <v-icon :icon="provider.icon" :color="provider.iconColor" size="20" />
                 </v-avatar>
-                <div class="flex-grow-1 min-width-0">
-                  <div class="text-body-1 font-weight-bold">{{ provider.name }}</div>
+                <div class="flex-grow-1" style="min-width: 0; overflow: hidden;">
+                  <div class="text-body-2 font-weight-bold text-truncate">{{ provider.name }}</div>
                   <div class="text-caption text-disabled text-truncate">{{ provider.description }}</div>
                 </div>
-                <v-switch v-model="providerEnabled[provider.key]" hide-details density="compact" color="primary" class="ml-2 flex-shrink-0" />
-              </v-card-title>
+                <v-switch v-model="providerEnabled[provider.key]" hide-details density="compact" color="primary" style="flex: 0 0 auto;" />
+              </div>
               <v-divider v-if="providerEnabled[provider.key]" />
               <v-card-text v-if="providerEnabled[provider.key]" class="pt-3">
                 <v-text-field
@@ -104,7 +118,7 @@
             </v-card>
           </v-col>
         </v-row>
-        <v-btn color="primary" class="mt-4" prepend-icon="mdi-content-save" @click="saveProviderSettings" :loading="saving">
+        <v-btn color="primary" class="mt-4 save-providers-btn" prepend-icon="mdi-content-save" @click="saveProviderSettings" :loading="saving" style="position: sticky; bottom: 16px; z-index: 5;">
           Save Providers
         </v-btn>
       </template>
@@ -115,7 +129,7 @@
           Models
           <v-spacer />
           <v-btn color="primary" prepend-icon="mdi-plus" size="small" variant="tonal" @click="openModelDialog()">
-            Add Model
+            New Model
           </v-btn>
         </div>
         <p class="text-body-2 text-disabled mb-4">
@@ -131,7 +145,7 @@
             system prompt, knowledge stores and tools.
           </div>
           <v-btn color="primary" prepend-icon="mdi-plus" variant="tonal" @click="openModelDialog()">
-            Add First Model
+            New Model
           </v-btn>
         </div>
         <v-card v-else elevation="1">
@@ -157,7 +171,7 @@
                   {{ m.enabled !== false ? 'Active' : 'Disabled' }}
                 </v-chip>
                 <v-btn icon="mdi-pencil" size="x-small" variant="text" @click.stop="openModelDialog(m)" />
-                <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="modelsStore.deleteModel(m.id)" />
+                <v-btn icon="mdi-delete" size="x-small" variant="text" color="error" @click.stop="confirmDeleteModel(m)" />
               </template>
             </v-list-item>
           </v-list>
@@ -183,7 +197,7 @@
               <v-icon icon="mdi-database-outline" size="48" class="mb-3" style="opacity:0.3" />
               <div class="text-body-2 text-disabled mb-3">No knowledge stores yet</div>
               <v-btn color="primary" size="small" variant="tonal" prepend-icon="mdi-plus" @click="showCreateKs = true">
-                Create Store
+                New Store
               </v-btn>
             </div>
             <v-card v-else elevation="1">
@@ -256,7 +270,7 @@
           Agents
           <v-spacer />
           <v-btn color="primary" prepend-icon="mdi-plus" size="small" variant="tonal" @click="openAgentDialog()">
-            Add Agent
+            New Agent
           </v-btn>
         </div>
         <p class="text-body-2 text-disabled mb-4">
@@ -270,7 +284,7 @@
             Agents combine a system prompt, tools, and knowledge stores into a reusable AI persona.
           </div>
           <v-btn color="primary" prepend-icon="mdi-plus" variant="tonal" @click="openAgentDialog()">
-            Add First Agent
+            New Agent
           </v-btn>
         </div>
         <v-card v-else elevation="1">
@@ -308,7 +322,7 @@
           Tools
           <v-spacer />
           <v-btn color="primary" prepend-icon="mdi-plus" size="small" variant="tonal" @click="openToolDialog()">
-            Add Tool
+            New Tool
           </v-btn>
         </div>
         <p class="text-body-2 text-disabled mb-4">
@@ -322,7 +336,7 @@
             Add MCP tool servers or define custom Python / TypeScript functions to extend AI capabilities.
           </div>
           <v-btn color="primary" prepend-icon="mdi-plus" variant="tonal" @click="openToolDialog()">
-            Add First Tool
+            New Tool
           </v-btn>
         </div>
         <v-card v-else elevation="1">
@@ -415,7 +429,7 @@
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" @click="showModelDialog = false">Cancel</v-btn>
-          <v-btn color="primary" @click="saveModel">Save</v-btn>
+          <v-btn color="primary" :disabled="!modelForm.name.trim()" @click="saveModel">Save</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -457,7 +471,7 @@
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" @click="showAgentDialog = false">Cancel</v-btn>
-          <v-btn color="primary" @click="saveAgent">Save</v-btn>
+          <v-btn color="primary" :disabled="!agentForm.name.trim()" @click="saveAgent">Save</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -482,7 +496,22 @@
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" @click="showToolDialog = false">Cancel</v-btn>
-          <v-btn color="primary" @click="saveTool">Save</v-btn>
+          <v-btn color="primary" :disabled="!toolForm.name.trim()" @click="saveTool">Save</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Delete model confirmation dialog -->
+    <v-dialog v-model="showDeleteModelDialog" max-width="400">
+      <v-card>
+        <v-card-title class="pt-4">Delete Model</v-card-title>
+        <v-card-text>
+          Are you sure you want to delete <strong>{{ deletingModel?.name }}</strong>? This action cannot be undone.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showDeleteModelDialog = false">Cancel</v-btn>
+          <v-btn color="error" variant="tonal" @click="executeDeleteModel">Delete</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -512,12 +541,14 @@ import { useModelsStore } from '../stores/models'
 import { useAgentsStore } from '../stores/agents'
 import { useToolsStore } from '../stores/tools'
 import { useKnowledgeStore } from '../stores/knowledge'
+import { useNotificationStore } from '../stores/notification'
 
 const settingsStore = useSettingsStore()
 const modelsStore = useModelsStore()
 const agentsStore = useAgentsStore()
 const toolsStore = useToolsStore()
 const knowledgeStore = useKnowledgeStore()
+const notify = useNotificationStore()
 
 // Reusable item lists for comboboxes/selects
 const knowledgeStoreItems = computed(() =>
@@ -560,7 +591,7 @@ const tabs = [
 const providers = [
   { key: 'openai', name: 'OpenAI', keyLabel: 'API Key', hasModel: true, icon: 'mdi-brain', iconColor: '#10a37f', description: 'GPT-4o, GPT-4, GPT-3.5 and more' },
   { key: 'anthropic', name: 'Anthropic', keyLabel: 'API Key', hasModel: true, icon: 'mdi-robot-excited-outline', iconColor: '#d97706', description: 'Claude 3.5 Sonnet, Claude 3 Opus and more' },
-  { key: 'ollama', name: 'Ollama', keyLabel: 'API Key (optional)', hasUrl: true, urlLabel: 'Base URL', hasModel: true, icon: 'mdi-layers-triple', iconColor: '#0ea5e9', description: 'Run models locally, no API key needed' },
+  { key: 'ollama', name: 'Ollama', keyLabel: 'API Key (optional)', hasUrl: true, urlLabel: 'Base URL', hasModel: true, icon: 'mdi-layers-triple', iconColor: '#0ea5e9', description: 'Run models locally — API key only needed for remote instances' },
   { key: 'groq', name: 'Groq', keyLabel: 'API Key', hasModel: true, icon: 'mdi-lightning-bolt', iconColor: '#f59e0b', description: 'Ultra-fast inference — Llama, Mixtral and more' },
   { key: 'gemini', name: 'Google Gemini', keyLabel: 'API Key', hasModel: true, icon: 'mdi-google', iconColor: '#4285f4', description: 'Gemini 1.5 Pro, Flash and more' },
   { key: 'azure', name: 'Azure OpenAI', keyLabel: 'API Key', hasUrl: true, urlLabel: 'Azure Endpoint', hasModel: true, icon: 'mdi-microsoft-azure', iconColor: '#0078d4', description: 'OpenAI models hosted on Microsoft Azure' },
@@ -591,7 +622,7 @@ watch(() => settingsStore.settings, (s) => {
     providerUrls[p.key] = s[p.key]?.baseUrl || ''
     providerModels[p.key] = s[p.key]?.defaultModel || ''
   })
-}, { immediate: true })
+}, { immediate: true, deep: true })
 
 async function saveProviderSettings() {
   saving.value = true
@@ -599,7 +630,33 @@ async function saveProviderSettings() {
   providers.forEach(p => {
     providerData[p.key] = { enabled: providerEnabled[p.key], apiKey: providerKeys[p.key], baseUrl: providerUrls[p.key], defaultModel: providerModels[p.key] }
   })
-  try { await settingsStore.saveSettings(providerData) } finally { saving.value = false }
+  try {
+    await settingsStore.saveSettings(providerData)
+    notify.success('Provider settings saved successfully!')
+  } catch (e) {
+    console.error('Failed to save provider settings:', e)
+    notify.error('Failed to save provider settings. Please try again.')
+  } finally {
+    saving.value = false
+  }
+}
+
+// ── Delete model confirmation ────────────────────────────────────────────────
+const showDeleteModelDialog = ref(false)
+const deletingModel = ref(null)
+
+function confirmDeleteModel(model) {
+  deletingModel.value = model
+  showDeleteModelDialog.value = true
+}
+
+async function executeDeleteModel() {
+  if (deletingModel.value) {
+    await modelsStore.deleteModel(deletingModel.value.id)
+    notify.success('Model deleted.')
+  }
+  showDeleteModelDialog.value = false
+  deletingModel.value = null
 }
 
 // ── Model dialog ────────────────────────────────────────────────────────────
@@ -633,12 +690,18 @@ function openModelDialog(model = null) {
 
 async function saveModel() {
   const payload = { ...modelForm }
-  if (editingModel.value?.id) {
-    await modelsStore.updateModel(editingModel.value.id, payload)
-  } else {
-    await modelsStore.createModel(payload)
+  try {
+    if (editingModel.value?.id) {
+      await modelsStore.updateModel(editingModel.value.id, payload)
+      notify.success('Model updated!')
+    } else {
+      await modelsStore.createModel(payload)
+      notify.success('Model created!')
+    }
+    showModelDialog.value = false
+  } catch (e) {
+    notify.error('Failed to save model.')
   }
-  showModelDialog.value = false
 }
 
 // ── Agent dialog ─────────────────────────────────────────────────────────────
@@ -667,12 +730,18 @@ function openAgentDialog(agent = null) {
 }
 
 async function saveAgent() {
-  if (editingAgent.value?.id) {
-    await agentsStore.updateAgent(editingAgent.value.id, { ...agentForm })
-  } else {
-    await agentsStore.createAgent({ ...agentForm })
+  try {
+    if (editingAgent.value?.id) {
+      await agentsStore.updateAgent(editingAgent.value.id, { ...agentForm })
+      notify.success('Agent updated!')
+    } else {
+      await agentsStore.createAgent({ ...agentForm })
+      notify.success('Agent created!')
+    }
+    showAgentDialog.value = false
+  } catch (e) {
+    notify.error('Failed to save agent.')
   }
-  showAgentDialog.value = false
 }
 
 // ── Tool dialog ───────────────────────────────────────────────────────────────
@@ -701,12 +770,18 @@ function openToolDialog(tool = null) {
 
 async function saveTool() {
   const payload = { ...toolForm, config: { ...toolForm.config } }
-  if (editingTool.value?.id) {
-    await toolsStore.updateTool(editingTool.value.id, payload)
-  } else {
-    await toolsStore.createTool(payload)
+  try {
+    if (editingTool.value?.id) {
+      await toolsStore.updateTool(editingTool.value.id, payload)
+      notify.success('Tool updated!')
+    } else {
+      await toolsStore.createTool(payload)
+      notify.success('Tool created!')
+    }
+    showToolDialog.value = false
+  } catch (e) {
+    notify.error('Failed to save tool.')
   }
-  showToolDialog.value = false
 }
 
 // ── Knowledge stores ──────────────────────────────────────────────────────────
@@ -767,19 +842,40 @@ onMounted(async () => {
 
 /* ── Settings sidebar ──────────────────────────── */
 .settings-nav {
-  width: 200px;
-  min-width: 200px;
-  border-right: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  overflow-y: auto;
-  background: rgb(var(--v-theme-surface));
-  transition: width 0.2s ease, min-width 0.2s ease;
+  width: 210px;
+  min-width: 210px;
+  border-right: 1px solid rgba(var(--v-border-color), 0.06);
+  overflow: hidden;
+  background: rgba(var(--v-theme-surface), 0.9);
+  backdrop-filter: blur(12px);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 1px 0 12px rgba(0, 0, 0, 0.08);
 }
 
 /* Rail (collapsed) mode — icons only */
 .settings-nav--rail {
   width: 56px;
   min-width: 56px;
+  overflow: hidden !important;
+}
+
+/* Active list-item in settings sidebar */
+.settings-nav :deep(.v-list-item--active) {
+  margin: 0 6px;
+  border-left: 3px solid rgba(124, 77, 255, 0.8);
+  border-radius: 0 8px 8px 0 !important;
+}
+
+.settings-nav--rail :deep(*) {
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+}
+
+.settings-nav--rail :deep(*::-webkit-scrollbar) {
+  display: none !important;
 }
 
 /* Hide list item title text when in rail mode */
@@ -790,24 +886,53 @@ onMounted(async () => {
 .settings-content {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px;
+  padding: 28px 32px;
+  background: linear-gradient(180deg, rgba(var(--v-theme-background), 1) 0%, rgba(var(--v-theme-background), 0.97) 100%);
 }
 
 .settings-section-title {
-  font-size: 1.1rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  letter-spacing: -0.3px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid rgba(124, 77, 255, 0.15);
 }
 
 .drop-zone {
-  border: 2px dashed rgba(var(--v-theme-primary), 0.4);
-  border-radius: 8px;
+  border: 2px dashed rgba(var(--v-theme-primary), 0.25);
+  border-radius: 16px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(var(--v-theme-primary), 0.02);
+  position: relative;
+  overflow: hidden;
 }
+
+.drop-zone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(var(--v-theme-primary), 0.04) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.drop-zone:hover::before,
+.drop-zone.dragging::before {
+  opacity: 1;
+}
+
 .drop-zone:hover,
 .drop-zone.dragging {
   border-color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.05);
+  transform: scale(1.01);
+  box-shadow: 0 4px 20px rgba(var(--v-theme-primary), 0.1);
+}
+
+/* Sticky Save Providers button */
+.save-providers-btn {
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(124, 77, 255, 0.2);
 }
 </style>

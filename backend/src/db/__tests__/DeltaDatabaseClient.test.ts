@@ -10,7 +10,6 @@ describe('DeltaDatabaseClient', () => {
   beforeEach(() => {
     client = new DeltaDatabaseClient('http://localhost:8080', 'testkey', 'testdb');
     mock = new MockAdapter(client._http);
-    mock.onPost('/api/login').reply(200, { token: 'mock-token' });
   });
 
   afterEach(() => {
@@ -19,40 +18,15 @@ describe('DeltaDatabaseClient', () => {
 
   // ── Auth ────────────────────────────────────────────────────────────────────
 
-  describe('_ensureToken', () => {
-    test('fetches a token on the first call', async () => {
-      const token = await client._ensureToken();
-      expect(token).toBe('mock-token');
-      expect(mock.history['post']!.length).toBe(1);
-    });
-
-    test('caches the token so subsequent calls do not re-login', async () => {
-      await client._ensureToken();
-      await client._ensureToken();
-      expect(mock.history['post']!.length).toBe(1);
-    });
-
-    test('re-fetches when the stored token is already expired', async () => {
-      client._token = 'old-token';
-      client._tokenExpiry = Date.now() - 1000;
-      const token = await client._ensureToken();
-      expect(token).toBe('mock-token');
-    });
-
-    test('sends adminKey in the login body when available', async () => {
-      await client._ensureToken();
-      const body = JSON.parse(mock.history['post']![0]!.data as string) as Record<string, unknown>;
-      expect(body).toEqual({ key: 'testkey' });
-    });
-
-    test('falls back to client_id when adminKey is absent', async () => {
-      const noKeyClient = new DeltaDatabaseClient('http://localhost:8080', null, 'testdb');
-      const noKeyMock = new MockAdapter(noKeyClient._http);
-      noKeyMock.onPost('/api/login').reply(200, { token: 'anon-token' });
-      await noKeyClient._ensureToken();
-      const body = JSON.parse(noKeyMock.history['post']![0]!.data as string) as Record<string, unknown>;
-      expect(body).toEqual({ client_id: 'deltachat' });
-      noKeyMock.restore();
+  describe('auth', () => {
+    test('uses the API key directly as Bearer token (no login call)', async () => {
+      mock.onGet('/entity/testdb').reply(200, { id: 'c1', title: 'Test' });
+      await client._get('chats:c1');
+      // No POST to /api/login should have been made
+      expect(mock.history['post']!.length).toBe(0);
+      // Bearer header should contain the raw API key
+      const authHeader = mock.history['get']![0]!.headers!['Authorization'];
+      expect(authHeader).toBe('Bearer testkey');
     });
   });
 
@@ -67,16 +41,7 @@ describe('DeltaDatabaseClient', () => {
       expect((body['chats:abc'] as Record<string, unknown>)['id']).toBe('abc');
     });
 
-    test('retries once on 401 by refreshing the token', async () => {
-      mock
-        .onPut('/entity/testdb').replyOnce(401)
-        .onPut('/entity/testdb').reply(200);
-      await client._put({ 'k': {} });
-      expect(mock.history['put']!.length).toBe(2);
-      expect(mock.history['post']!.length).toBe(2);
-    });
-
-    test('re-throws non-401 errors', async () => {
+    test('re-throws errors', async () => {
       mock.onPut('/entity/testdb').reply(500);
       await expect(client._put({ k: {} })).rejects.toMatchObject({
         response: { status: 500 },
@@ -100,16 +65,7 @@ describe('DeltaDatabaseClient', () => {
       expect(result).toBeNull();
     });
 
-    test('retries once on 401 by refreshing the token', async () => {
-      const doc = { id: 'x' };
-      mock
-        .onGet('/entity/testdb').replyOnce(401)
-        .onGet('/entity/testdb').reply(200, doc);
-      const result = await client._get('chats:x');
-      expect(result).toEqual(doc);
-    });
-
-    test('re-throws non-401/404 errors', async () => {
+    test('re-throws non-404 errors', async () => {
       mock.onGet('/entity/testdb').reply(503);
       await expect(client._get('key')).rejects.toMatchObject({
         response: { status: 503 },
@@ -173,14 +129,15 @@ describe('DeltaDatabaseClient', () => {
       expect(result).toEqual([]);
     });
 
-    test('returns all non-deleted entities', async () => {
+    test('returns all entities listed in the index', async () => {
       mock
         .onGet('/entity/testdb').replyOnce(200, { keys: ['c1', 'c2'] })
         .onGet('/entity/testdb').replyOnce(200, { id: 'c1', title: 'A' })
-        .onGet('/entity/testdb').replyOnce(200, { id: 'c2', _deleted: true });
+        .onGet('/entity/testdb').replyOnce(200, { id: 'c2', title: 'B' });
       const result = await client.findAll('chats');
-      expect(result).toHaveLength(1);
+      expect(result).toHaveLength(2);
       expect(result[0]!.id).toBe('c1');
+      expect(result[1]!.id).toBe('c2');
     });
   });
 
@@ -191,11 +148,6 @@ describe('DeltaDatabaseClient', () => {
       const doc = { id: 'c1', title: 'Chat' };
       mock.onGet('/entity/testdb').reply(200, doc);
       expect(await client.findById('chats', 'c1')).toEqual(doc);
-    });
-
-    test('returns null for a soft-deleted entity', async () => {
-      mock.onGet('/entity/testdb').reply(200, { id: 'c1', _deleted: true });
-      expect(await client.findById('chats', 'c1')).toBeNull();
     });
 
     test('returns null when the entity does not exist', async () => {
@@ -233,19 +185,19 @@ describe('DeltaDatabaseClient', () => {
   // ── delete ───────────────────────────────────────────────────────────────────
 
   describe('delete', () => {
-    test('soft-deletes entity and removes it from the master index', async () => {
+    test('uses DELETE endpoint and removes entity from the master index', async () => {
       const existing = { id: 'c1', title: 'Chat' };
       mock
         .onGet('/entity/testdb').replyOnce(200, existing)
+        .onDelete('/entity/testdb').reply(200)
         .onGet('/entity/testdb').replyOnce(200, { keys: ['c1'] })
         .onPut('/entity/testdb').reply(200);
 
       const result = await client.delete('chats', 'c1');
       expect(result).toEqual({ ok: true });
 
-      const deletePut = mock.history['put']![0]!;
-      const body = JSON.parse(deletePut.data as string) as Record<string, { _deleted: boolean }>;
-      expect(body['chats:c1']!._deleted).toBe(true);
+      // Should have called DELETE, not PUT with _deleted
+      expect(mock.history['delete']!.length).toBe(1);
     });
 
     test('returns { ok: false } when entity does not exist', async () => {

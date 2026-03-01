@@ -30,7 +30,8 @@ router.use((req: Request, _res: Response, next: NextFunction) => {
 });
 
 router.use('/chats', chatRouter);
-router.use('/knowledge-stores', knowledgeRouter);
+router.use('/knowledge', knowledgeRouter);
+router.use('/knowledge-stores', knowledgeRouter); // alias for backwards compat
 router.use('/webhooks', webhooksRouter);
 router.use('/settings', settingsRouter);
 router.use('/mcp', mcpRouter);

@@ -2,8 +2,12 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { getAdapter, DeltaDatabaseAdapter, Entity } from '../db/DeltaDatabaseAdapter';
-import type ModelProviderBase from '../modules/ModelProvider/ModelProviderBase';
+import ModelProviderBase from '../modules/ModelProvider/ModelProviderBase';
+import OpenAIProvider from '../modules/ModelProvider/OpenAIProvider';
+import GeminiProvider from '../modules/ModelProvider/GeminiProvider';
+import OllamaProvider from '../modules/ModelProvider/OllamaProvider';
 import type KnowledgeService from './KnowledgeService';
+import config from '../config';
 
 interface AppError extends Error {
   status?: number;
@@ -35,26 +39,67 @@ interface ChatServiceOpts {
   knowledgeService?: KnowledgeService | null;
 }
 
-let _modelProvider: ModelProviderBase | null = null;
+interface ProviderSettings {
+  enabled?: boolean;
+  apiKey?: string;
+  baseUrl?: string;
+  defaultModel?: string;
+}
 
-function getModelProvider(): ModelProviderBase {
-  if (_modelProvider) return _modelProvider;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const config = require('../config').default as { openai: { apiKey: string }; gemini: { apiKey: string } };
-  if (config.openai.apiKey) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const OpenAIProvider = require('../modules/ModelProvider/OpenAIProvider').default as new () => ModelProviderBase;
-    _modelProvider = new OpenAIProvider();
-  } else if (config.gemini.apiKey) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const GeminiProvider = require('../modules/ModelProvider/GeminiProvider').default as new () => ModelProviderBase;
-    _modelProvider = new GeminiProvider();
-  } else {
-    throw new Error(
-      'No model provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY in .env'
-    );
+/** Cache of provider instances keyed by provider name */
+const _providerCache = new Map<string, ModelProviderBase>();
+
+/**
+ * Build a provider instance for the given provider name, using
+ * saved settings from the database and falling back to env-var config.
+ */
+async function buildProvider(providerName: string, db: DeltaDatabaseAdapter): Promise<ModelProviderBase> {
+  const cached = _providerCache.get(providerName);
+  if (cached) return cached;
+
+  // Load saved settings from the database
+  const settings = await db.getSettings();
+  const ps = (settings[providerName] ?? {}) as ProviderSettings;
+
+  let provider: ModelProviderBase;
+
+  switch (providerName) {
+    case 'openai': {
+      const apiKey = ps.apiKey || config.openai.apiKey;
+      if (!apiKey) throw Object.assign(new Error('OpenAI API key not configured'), { status: 400 });
+      provider = new OpenAIProvider({ apiKey, defaultModel: ps.defaultModel || config.openai.defaultModel });
+      break;
+    }
+    case 'gemini': {
+      const apiKey = ps.apiKey || config.gemini.apiKey;
+      if (!apiKey) throw Object.assign(new Error('Gemini API key not configured'), { status: 400 });
+      provider = new GeminiProvider({ apiKey, defaultModel: ps.defaultModel || config.gemini.defaultModel });
+      break;
+    }
+    case 'ollama': {
+      const baseUrl = ps.baseUrl || config.ollama.baseUrl;
+      provider = new OllamaProvider({ baseUrl, defaultModel: ps.defaultModel || config.ollama.defaultModel });
+      break;
+    }
+    default:
+      throw Object.assign(new Error(`Unknown provider: ${providerName}`), { status: 400 });
   }
-  return _modelProvider;
+
+  _providerCache.set(providerName, provider);
+  return provider;
+}
+
+/** Fallback: pick first available provider from env config */
+function getDefaultProvider(): ModelProviderBase {
+  if (config.openai.apiKey) return new OpenAIProvider();
+  if (config.gemini.apiKey) return new GeminiProvider();
+  // Default to Ollama (runs locally, no key needed)
+  return new OllamaProvider();
+}
+
+/** Clear the provider cache — called when settings are saved */
+export function clearProviderCache(): void {
+  _providerCache.clear();
 }
 
 class ChatService {
@@ -64,7 +109,7 @@ class ChatService {
 
   constructor(opts: ChatServiceOpts = {}) {
     this._db = opts.db ?? getAdapter();
-    this._getProvider = opts.getProvider ?? getModelProvider;
+    this._getProvider = opts.getProvider ?? getDefaultProvider;
     this._knowledgeService = opts.knowledgeService ?? null;
   }
 
@@ -132,7 +177,7 @@ class ChatService {
     const resolved = await this._resolveModelConfig(opts, chat);
     const messages = await this._buildMessages(chat, userContent, resolved.systemPromptOverride, resolved.knowledgeStoreIdsOverride);
 
-    const provider = this._resolveProvider(opts);
+    const provider = await this._resolveProvider(opts, chat);
     const result = await provider.chat(messages, resolved.modelOpts);
 
     const assistantMessage = await this._db.createMessage({
@@ -174,7 +219,7 @@ class ChatService {
 
     const resolved = await this._resolveModelConfig(opts, chat);
     const messages = await this._buildMessages(chat, userContent, resolved.systemPromptOverride, resolved.knowledgeStoreIdsOverride);
-    const provider = this._resolveProvider(opts);
+    const provider = await this._resolveProvider(opts, chat);
 
     let full = '';
     try {
@@ -246,8 +291,38 @@ class ChatService {
     return messages;
   }
 
-  private _resolveProvider(_opts: SendMessageOpts): ModelProviderBase {
-    return this._getProvider();
+  private async _resolveProvider(opts: SendMessageOpts, chat?: Entity): Promise<ModelProviderBase> {
+    // 1. Explicit provider from opts
+    const providerName = opts.provider
+      ?? (chat?.['provider'] as string | undefined);
+
+    if (providerName) {
+      try {
+        return await buildProvider(providerName, this._db);
+      } catch (err) {
+        console.error(`[ChatService] Failed to build provider "${providerName}":`, (err as Error).message);
+      }
+    }
+
+    // 2. Resolve from modelId → aiModel.provider
+    const modelId = opts.modelId ?? (chat?.['modelId'] as string | undefined);
+    if (modelId) {
+      try {
+        const aiModel = await this._db.getAiModel(modelId);
+        if (aiModel?.['provider']) {
+          return await buildProvider(aiModel['provider'] as string, this._db);
+        }
+      } catch {
+        // fall through to default
+      }
+    }
+
+    // 3. Fallback to default provider
+    try {
+      return this._getProvider();
+    } catch {
+      return getDefaultProvider();
+    }
   }
 
   private _buildModelOpts(chat: Entity, opts: SendMessageOpts): Record<string, unknown> {

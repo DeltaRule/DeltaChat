@@ -5,8 +5,8 @@ const config = {
   port: parseInt(process.env['PORT'] ?? '3000', 10),
   nodeEnv: process.env['NODE_ENV'] ?? 'development',
   deltaDb: {
-    url: process.env['DELTA_DB_URL'] ?? null,
-    adminKey: process.env['DELTA_DB_ADMIN_KEY'] ?? null,
+    url: process.env['DELTA_DB_URL'] ?? 'http://localhost:8080',
+    adminKey: process.env['DELTA_DB_ADMIN_KEY'] ?? 'changeme',
     database: process.env['DELTA_DB_DATABASE'] ?? 'deltachat',
   },
   openai: {
@@ -31,7 +31,7 @@ const config = {
   mcp: { serverUrl: process.env['MCP_SERVER_URL'] ?? '' },
   webhookSecret: process.env['WEBHOOK_SECRET'] ?? 'change-me-in-production',
   cors: {
-    origins: (process.env['CORS_ORIGINS'] ?? 'http://localhost:3000,http://localhost:5173')
+    origins: (process.env['CORS_ORIGINS'] ?? 'http://localhost:3000,http://localhost:5173,http://localhost:5174')
       .split(',')
       .map((o) => o.trim()),
   },

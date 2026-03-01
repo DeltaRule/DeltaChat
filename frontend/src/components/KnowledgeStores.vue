@@ -187,14 +187,16 @@ onMounted(() => knowledgeStore.loadKnowledgeStores())
 
 <style scoped>
 .drop-zone {
-  border: 2px dashed rgba(var(--v-theme-primary), 0.4);
-  border-radius: 8px;
+  border: 2px dashed rgba(var(--v-theme-primary), 0.3);
+  border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(var(--v-theme-primary), 0.02);
 }
 .drop-zone:hover,
 .drop-zone.dragging {
   border-color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.05);
+  background: rgba(var(--v-theme-primary), 0.06);
+  transform: scale(1.01);
 }
 </style>
