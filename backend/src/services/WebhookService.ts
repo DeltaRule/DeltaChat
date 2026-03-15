@@ -1,6 +1,6 @@
 'use strict';
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import axios from 'axios';
 import { getAdapter, DeltaDatabaseAdapter, Entity } from '../db/DeltaDatabaseAdapter';
 
@@ -37,7 +37,7 @@ class WebhookService {
       throw err;
     }
     return this._db.createWebhook({
-      id: uuidv4(),
+      id: randomUUID(),
       name: (data['name'] as string | undefined) ?? 'Unnamed Webhook',
       url: data['url'] as string,
       events: (data['events'] as string[] | undefined) ?? ['message.created'],

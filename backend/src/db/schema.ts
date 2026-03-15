@@ -21,6 +21,7 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
     fields: {
       id: 'string', chatId: 'string', role: '"user"|"assistant"|"system"',
       content: 'string', model: 'string|null', usage: 'object|null',
+      sources: 'Array<object>|null',
       createdAt: 'string (ISO 8601)', updatedAt: 'string (ISO 8601)',
     },
   },
@@ -28,7 +29,10 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
     required: ['id', 'name'],
     fields: {
       id: 'string', name: 'string', description: 'string',
-      embeddingModel: 'string|null', metadata: 'object',
+      embeddingModel: 'string|null', embeddingModelId: 'string|null',
+      vectorStoreConfig: 'object|null', documentProcessorConfig: 'object|null',
+      chunkSize: 'number|null', chunkOverlap: 'number|null', chunkUnit: 'string|null',
+      metadata: 'object',
       createdAt: 'string (ISO 8601)', updatedAt: 'string (ISO 8601)',
     },
   },
@@ -59,7 +63,7 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
     required: ['id', 'name'],
     fields: {
       id: 'string', name: 'string', description: 'string|null',
-      type: '"model"|"webhook"|"agent"',
+      type: '"model"|"webhook"|"agent"|"embedding"',
       provider: 'string|null', providerModel: 'string|null',
       systemPrompt: 'string|null', temperature: 'number|null', maxTokens: 'number|null',
       knowledgeStoreIds: 'Array<string>', toolIds: 'Array<string>',
@@ -103,4 +107,67 @@ export function validate(collection: string, doc: Record<string, unknown>): void
       throw err;
     }
   }
+}
+
+// ── JSON Schema (draft-07) generation ─────────────────────────────────────
+
+/**
+ * Convert a field type string from the SCHEMAS definition into a JSON Schema
+ * property definition.
+ */
+function fieldToJsonSchema(fieldType: string): Record<string, unknown> {
+  // Enum: "value1"|"value2"|...
+  if (/^"[^"]+"\|"[^"]+"/.test(fieldType.replace(/\s/g, ''))) {
+    const values = [...fieldType.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    return { type: 'string', enum: values };
+  }
+  // Single quoted enum: "global"
+  if (/^"[^"]+"$/.test(fieldType.trim())) {
+    return { type: 'string', enum: [fieldType.replace(/"/g, '')] };
+  }
+  // Array<T>
+  const arrMatch = fieldType.match(/^Array<(\w+)>(\|null)?$/);
+  if (arrMatch) {
+    const base: Record<string, unknown> = { type: 'array', items: { type: arrMatch[1].toLowerCase() } };
+    if (arrMatch[2]) {
+      return { oneOf: [base, { type: 'null' }] };
+    }
+    return base;
+  }
+  // type|null
+  const nullMatch = fieldType.match(/^(\w+)\|null$/);
+  if (nullMatch) {
+    return { type: [nullMatch[1].toLowerCase(), 'null'] };
+  }
+  // string (ISO 8601)
+  if (fieldType.includes('ISO 8601')) {
+    return { type: 'string', format: 'date-time' };
+  }
+  // Primitive: string, number, boolean, object
+  return { type: fieldType.toLowerCase() };
+}
+
+/**
+ * Build a complete JSON Schema (draft-07) document for a collection.
+ * `schemaId` is the full schema_id (e.g. `deltachat.chats`).
+ */
+export function toJsonSchema(
+  collection: string,
+  schemaId: string,
+): Record<string, unknown> | null {
+  const def = SCHEMAS[collection];
+  if (!def) return null;
+
+  const properties: Record<string, unknown> = {};
+  for (const [field, type] of Object.entries(def.fields)) {
+    properties[field] = fieldToJsonSchema(type);
+  }
+
+  return {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    $id: schemaId,
+    type: 'object',
+    properties,
+    required: def.required,
+  };
 }

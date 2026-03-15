@@ -1,47 +1,30 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { toast } from 'vue-sonner'
 
 /**
- * Global notification/snackbar store.
+ * Global notification store using vue-sonner.
  * Usage:
  *   const notify = useNotificationStore()
  *   notify.success('Settings saved!')
  *   notify.error('Failed to save settings')
- *   notify.info('Loading...')
  */
 export const useNotificationStore = defineStore('notification', () => {
-  const show = ref(false)
-  const message = ref('')
-  const color = ref('success')
-  const timeout = ref(4000)
 
   function success(msg, ms = 4000) {
-    message.value = msg
-    color.value = 'success'
-    timeout.value = ms
-    show.value = true
+    toast.success(msg, { duration: ms })
   }
 
   function error(msg, ms = 6000) {
-    message.value = msg
-    color.value = 'error'
-    timeout.value = ms
-    show.value = true
+    toast.error(msg, { duration: ms })
   }
 
   function info(msg, ms = 4000) {
-    message.value = msg
-    color.value = 'info'
-    timeout.value = ms
-    show.value = true
+    toast.info(msg, { duration: ms })
   }
 
   function warning(msg, ms = 5000) {
-    message.value = msg
-    color.value = 'warning'
-    timeout.value = ms
-    show.value = true
+    toast.warning(msg, { duration: ms })
   }
 
-  return { show, message, color, timeout, success, error, info, warning }
+  return { success, error, info, warning }
 })

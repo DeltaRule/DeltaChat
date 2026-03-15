@@ -24,7 +24,18 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const stores = await req.services.knowledgeService.listKnowledgeStores();
-    res.json(stores);
+    // Enrich each store with its document count
+    const enriched = await Promise.all(
+      stores.map(async (ks) => {
+        try {
+          const docs = await req.services.knowledgeService.listDocuments(ks.id);
+          return { ...ks, documentCount: docs.length };
+        } catch {
+          return { ...ks, documentCount: 0 };
+        }
+      })
+    );
+    res.json(enriched);
   } catch (err) {
     next(err);
   }

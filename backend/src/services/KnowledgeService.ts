@@ -1,11 +1,13 @@
 'use strict';
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { getAdapter, DeltaDatabaseAdapter, Entity } from '../db/DeltaDatabaseAdapter';
 import type EmbeddingProviderBase from '../modules/EmbeddingProvider/EmbeddingProviderBase';
 import type VectorStoreBase from '../modules/VectorStore/VectorStoreBase';
 import type BinaryProcessorBase from '../modules/BinaryProcessor/BinaryProcessorBase';
 import type BinaryStorageBase from '../modules/BinaryStorage/BinaryStorageBase';
+import { createVectorStore, VectorStoreConfig } from '../modules/VectorStore/VectorStoreFactory';
+import { createBinaryProcessor, BinaryProcessorConfig } from '../modules/BinaryProcessor/BinaryProcessorFactory';
 
 interface AppError extends Error {
   status?: number;
@@ -38,51 +40,11 @@ interface RetrieveResult {
 
 interface KnowledgeServiceOpts {
   db?: DeltaDatabaseAdapter;
-  getVectorStore?: () => VectorStoreBase;
-  getEmbeddingProvider?: () => EmbeddingProviderBase;
-  getBinaryProcessor?: () => BinaryProcessorBase;
   getBinaryStorage?: () => BinaryStorageBase;
 }
 
-// Lazy-loaded singletons
-let _vectorStore: VectorStoreBase | null = null;
-let _embeddingProvider: EmbeddingProviderBase | null = null;
-let _binaryProcessor: BinaryProcessorBase | null = null;
+// Lazy-loaded binary storage singleton
 let _binaryStorage: BinaryStorageBase | null = null;
-
-function getVectorStore(): VectorStoreBase {
-  if (_vectorStore) return _vectorStore;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const ChromaVectorStore = require('../modules/VectorStore/ChromaVectorStore').default as new () => VectorStoreBase;
-  _vectorStore = new ChromaVectorStore();
-  return _vectorStore;
-}
-
-function getEmbeddingProvider(): EmbeddingProviderBase {
-  if (_embeddingProvider) return _embeddingProvider;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const config = require('../config').default as { openai: { apiKey: string } };
-  if (config.openai.apiKey) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const OpenAIEmbedding = require('../modules/EmbeddingProvider/OpenAIEmbedding').default as new () => EmbeddingProviderBase;
-    _embeddingProvider = new OpenAIEmbedding();
-  } else {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const OllamaEmbedding = require('../modules/EmbeddingProvider/OllamaEmbedding').default as new () => EmbeddingProviderBase;
-    _embeddingProvider = new OllamaEmbedding();
-  }
-  return _embeddingProvider;
-}
-
-function getBinaryProcessor(): BinaryProcessorBase {
-  if (_binaryProcessor) return _binaryProcessor;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const config = require('../config').default as { tika: { url: string } };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const TikaProcessor = require('../modules/BinaryProcessor/TikaProcessor').default as new (opts: { url: string }) => BinaryProcessorBase;
-  _binaryProcessor = new TikaProcessor({ url: config.tika.url });
-  return _binaryProcessor;
-}
 
 function getBinaryStorage(): BinaryStorageBase {
   if (_binaryStorage) return _binaryStorage;
@@ -103,34 +65,91 @@ function chunkText(text: string, maxLen = 1000, overlap = 100): string[] {
   return chunks;
 }
 
+/**
+ * Resolve an EmbeddingProvider from an ai_model entity of type "embedding".
+ */
+function createEmbeddingFromModel(model: Entity): EmbeddingProviderBase {
+  const provider = model['provider'] as string | null;
+  const providerModel = model['providerModel'] as string | null;
+
+  switch (provider) {
+    case 'openai': {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const OpenAIEmbedding = require('../modules/EmbeddingProvider/OpenAIEmbedding').default as new (opts: { model?: string }) => EmbeddingProviderBase;
+      return new OpenAIEmbedding({ model: providerModel ?? undefined });
+    }
+    case 'ollama':
+    default: {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const OllamaEmbedding = require('../modules/EmbeddingProvider/OllamaEmbedding').default as new (opts: { model?: string }) => EmbeddingProviderBase;
+      return new OllamaEmbedding({ model: providerModel ?? undefined });
+    }
+  }
+}
+
 class KnowledgeService {
   private _db: DeltaDatabaseAdapter;
-  private _getVectorStore: () => VectorStoreBase;
-  private _getEmbedding: () => EmbeddingProviderBase;
-  private _getProcessor: () => BinaryProcessorBase;
   private _getStorage: () => BinaryStorageBase;
 
   constructor(opts: KnowledgeServiceOpts = {}) {
     this._db = opts.db ?? getAdapter();
-    this._getVectorStore = opts.getVectorStore ?? getVectorStore;
-    this._getEmbedding = opts.getEmbeddingProvider ?? getEmbeddingProvider;
-    this._getProcessor = opts.getBinaryProcessor ?? getBinaryProcessor;
     this._getStorage = opts.getBinaryStorage ?? getBinaryStorage;
+  }
+
+  // ── Config resolution helpers ──────────────────────────────────────────────
+
+  private async _getGlobalSettings(): Promise<Entity> {
+    return this._db.getSettings();
+  }
+
+  private async _resolveVectorStore(ks: Entity): Promise<VectorStoreBase> {
+    const storeConfig = (ks['vectorStoreConfig'] as VectorStoreConfig | null)
+      ?? (await this._getGlobalSettings())['defaultVectorStoreConfig'] as VectorStoreConfig | null
+      ?? { type: 'local' as const };
+    return createVectorStore(storeConfig);
+  }
+
+  private async _resolveEmbeddingProvider(ks: Entity): Promise<EmbeddingProviderBase> {
+    const embeddingModelId = (ks['embeddingModelId'] as string | null)
+      ?? (await this._getGlobalSettings())['defaultEmbeddingModelId'] as string | null;
+
+    if (embeddingModelId) {
+      const model = await this._db.getAiModel(embeddingModelId);
+      if (model) return createEmbeddingFromModel(model);
+    }
+
+    // Fallback: use Ollama embedding by default
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const OllamaEmbedding = require('../modules/EmbeddingProvider/OllamaEmbedding').default as new () => EmbeddingProviderBase;
+    return new OllamaEmbedding();
+  }
+
+  private async _resolveBinaryProcessor(ks: Entity): Promise<BinaryProcessorBase> {
+    const procConfig = (ks['documentProcessorConfig'] as BinaryProcessorConfig | null)
+      ?? (await this._getGlobalSettings())['defaultDocumentProcessorConfig'] as BinaryProcessorConfig | null
+      ?? { type: 'langchain' as const };
+    return createBinaryProcessor(procConfig);
   }
 
   // ── Knowledge Store CRUD ───────────────────────────────────────────────────
 
   async createKnowledgeStore(data: Record<string, unknown> = {}): Promise<Entity> {
     const ks = await this._db.createKnowledgeStore({
-      id: uuidv4(),
+      id: randomUUID(),
       name: (data['name'] as string | undefined) ?? 'Unnamed Store',
       description: (data['description'] as string | undefined) ?? '',
       embeddingModel: (data['embeddingModel'] as string | null | undefined) ?? null,
+      embeddingModelId: (data['embeddingModelId'] as string | null | undefined) ?? null,
+      vectorStoreConfig: (data['vectorStoreConfig'] as Record<string, unknown> | null | undefined) ?? null,
+      documentProcessorConfig: (data['documentProcessorConfig'] as Record<string, unknown> | null | undefined) ?? null,
+      chunkSize: (data['chunkSize'] as number | null | undefined) ?? null,
+      chunkOverlap: (data['chunkOverlap'] as number | null | undefined) ?? null,
+      chunkUnit: (data['chunkUnit'] as string | null | undefined) ?? null,
       metadata: (data['metadata'] as Record<string, unknown> | undefined) ?? {},
     });
 
     try {
-      const vs = this._getVectorStore();
+      const vs = await this._resolveVectorStore(ks);
       await vs.createCollection(ks.id);
     } catch (err) {
       console.error('[KnowledgeService] Could not create vector collection:', (err as Error).message);
@@ -154,16 +173,16 @@ class KnowledgeService {
   }
 
   async deleteKnowledgeStore(id: string): Promise<unknown> {
-    await this.getKnowledgeStore(id);
+    const ks = await this.getKnowledgeStore(id);
 
     const docs = await this._db.listDocuments(id);
     for (const doc of docs) {
-      await this._deleteDocumentVectors(id, doc.id);
+      await this._deleteDocumentVectors(ks, doc.id);
       await this._db.deleteDocument(doc.id);
     }
 
     try {
-      const vs = this._getVectorStore();
+      const vs = await this._resolveVectorStore(ks);
       await vs.deleteCollection(id);
     } catch {
       // ignore
@@ -175,9 +194,9 @@ class KnowledgeService {
   // ── Document management ────────────────────────────────────────────────────
 
   async addDocument(knowledgeStoreId: string, fileInfo: FileInfo): Promise<Entity> {
-    await this.getKnowledgeStore(knowledgeStoreId);
+    const ks = await this.getKnowledgeStore(knowledgeStoreId);
 
-    const docId = uuidv4();
+    const docId = randomUUID();
 
     const storage = this._getStorage();
     await storage.store(docId, fileInfo.buffer, {
@@ -188,7 +207,7 @@ class KnowledgeService {
     let extractedText = '';
     let processorMeta: Record<string, unknown> = {};
     try {
-      const processor = this._getProcessor();
+      const processor = await this._resolveBinaryProcessor(ks);
       const result = await processor.process(fileInfo.buffer, fileInfo.mimetype);
       extractedText = result.text ?? '';
       processorMeta = result.metadata ?? {};
@@ -208,7 +227,7 @@ class KnowledgeService {
       processorMeta,
     });
 
-    this._indexDocument(knowledgeStoreId, docId, extractedText).catch((err: Error) => {
+    this._indexDocument(ks, docId, extractedText).catch((err: Error) => {
       console.error(`[KnowledgeService] Indexing failed for doc ${docId}:`, err.message);
       this._db.updateDocument(docId, { status: 'error', errorMessage: err.message });
     });
@@ -232,7 +251,8 @@ class KnowledgeService {
 
   async deleteDocument(knowledgeStoreId: string, docId: string): Promise<unknown> {
     await this.getDocument(knowledgeStoreId, docId);
-    await this._deleteDocumentVectors(knowledgeStoreId, docId);
+    const ks = await this.getKnowledgeStore(knowledgeStoreId);
+    await this._deleteDocumentVectors(ks, docId);
 
     try {
       const storage = this._getStorage();
@@ -248,16 +268,15 @@ class KnowledgeService {
 
   async retrieve(query: string, knowledgeStoreIds: string[], opts: RetrieveOpts = {}): Promise<RetrieveResult[]> {
     const topK = opts.topK ?? 5;
-
-    const embedding = this._getEmbedding();
-    const queryVector = await embedding.embed(query);
-
-    const vs = this._getVectorStore();
     const allResults: AllResult[] = [];
 
     for (const storeId of knowledgeStoreIds) {
       try {
-        // ChromaVectorStore has useCollection; call it via the base interface method by casting
+        const ks = await this.getKnowledgeStore(storeId);
+        const embedding = await this._resolveEmbeddingProvider(ks);
+        const queryVector = await embedding.embed(query);
+        const vs = await this._resolveVectorStore(ks);
+
         await (vs as unknown as { useCollection(name: string): Promise<unknown> }).useCollection(storeId);
         const results = await vs.query(queryVector, topK);
         for (const r of results) {
@@ -280,20 +299,33 @@ class KnowledgeService {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
-  private async _indexDocument(knowledgeStoreId: string, docId: string, text: string): Promise<void> {
+  private async _indexDocument(ks: Entity, docId: string, text: string): Promise<void> {
     if (!text.trim()) {
       await this._db.updateDocument(docId, { status: 'indexed', chunkCount: 0 });
       return;
     }
 
-    const chunks = chunkText(text, 1000, 100);
-    const embedding = this._getEmbedding();
-    const vs = this._getVectorStore();
+    // Read chunk config from knowledge store, fallback to defaults
+    const chunkSize = (ks['chunkSize'] as number | null) ?? 1000;
+    const chunkOverlap = (ks['chunkOverlap'] as number | null) ?? 100;
+    const chunkUnit = (ks['chunkUnit'] as string | null) ?? 'characters';
+
+    let effectiveSize = chunkSize;
+    let effectiveOverlap = chunkOverlap;
+    if (chunkUnit === 'tokens') {
+      // Approximate: 1 token ≈ 4 characters
+      effectiveSize = chunkSize * 4;
+      effectiveOverlap = chunkOverlap * 4;
+    }
+
+    const chunks = chunkText(text, effectiveSize, effectiveOverlap);
+    const embedding = await this._resolveEmbeddingProvider(ks);
+    const vs = await this._resolveVectorStore(ks);
 
     try {
-      await (vs as unknown as { useCollection(name: string): Promise<unknown> }).useCollection(knowledgeStoreId);
+      await (vs as unknown as { useCollection(name: string): Promise<unknown> }).useCollection(ks.id);
     } catch {
-      await vs.createCollection(knowledgeStoreId);
+      await vs.createCollection(ks.id);
     }
 
     const batchSize = 20;
@@ -305,7 +337,7 @@ class KnowledgeService {
         await vs.upsert(chunkId, vectors[j]!, {
           text: batch[j],
           docId,
-          knowledgeStoreId,
+          knowledgeStoreId: ks.id,
           chunkIndex: i + j,
         });
       }
@@ -314,10 +346,10 @@ class KnowledgeService {
     await this._db.updateDocument(docId, { status: 'indexed', chunkCount: chunks.length });
   }
 
-  private async _deleteDocumentVectors(knowledgeStoreId: string, docId: string): Promise<void> {
+  private async _deleteDocumentVectors(ks: Entity, docId: string): Promise<void> {
     try {
-      const vs = this._getVectorStore();
-      await (vs as unknown as { useCollection(name: string): Promise<unknown> }).useCollection(knowledgeStoreId);
+      const vs = await this._resolveVectorStore(ks);
+      await (vs as unknown as { useCollection(name: string): Promise<unknown> }).useCollection(ks.id);
       const doc = await this._db.getDocument(docId);
       const chunkCount = (doc?.['chunkCount'] as number | undefined) ?? 0;
       for (let i = 0; i < chunkCount; i++) {

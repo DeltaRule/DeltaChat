@@ -1,101 +1,97 @@
 <template>
-  <v-app :theme="theme">
-    <AppNavigation
-      v-if="!isSettings"
-      v-model="drawer"
-      :rail="rail"
-      @toggle-rail="rail = !rail"
-    />
+  <div class="h-screen flex flex-col overflow-hidden bg-background text-foreground">
+    <TooltipProvider :delay-duration="0">
+      <!-- Persistent header — never animates -->
+      <header class="sticky top-0 z-50 flex h-12 items-center border-b border-border bg-background/80 backdrop-blur-lg px-4 gap-3 shrink-0">
+        <button
+          class="-ml-1 flex h-8 w-8 items-center justify-center rounded-lg hover:bg-accent transition-colors"
+          @click="isSettings ? router.push('/') : sidebarToggleFn?.()"
+        >
+          <div class="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm">
+            <Triangle class="h-3.5 w-3.5" />
+          </div>
+        </button>
 
-    <v-app-bar elevation="0" density="compact">
-      <!-- Only show brand in app bar when sidebar is collapsed or on mobile -->
-      <v-app-bar-title v-if="isSettings || rail || mobile" class="font-weight-bold text-body-1">
-        <v-avatar color="primary" size="30" rounded="lg" class="mr-2" style="flex-shrink:0; box-shadow: 0 2px 10px rgba(124, 77, 255, 0.35);">
-          <v-icon icon="mdi-delta" size="17" color="white" />
-        </v-avatar>
-        <span style="background: linear-gradient(135deg, #B388FF, #7C4DFF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">DeltaChat</span>
-      </v-app-bar-title>
-      <v-spacer />
-      <v-tooltip :text="connected ? 'Connected' : 'Disconnected'" location="bottom">
-        <template #activator="{ props: tipProps }">
-          <v-icon
-            v-bind="tipProps"
-            :color="connected ? 'success' : 'error'"
-            icon="mdi-circle"
-            size="x-small"
-            class="mr-2"
-          />
-        </template>
-      </v-tooltip>
-      <v-btn
-        :icon="isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
-        variant="text"
-        density="compact"
-        @click="toggleTheme"
-      />
-      <v-btn
-        icon="mdi-cog"
-        variant="text"
-        density="compact"
-        :to="'/settings'"
-        class="mr-1"
-      />
-    </v-app-bar>
+        <div class="flex-1" />
 
-    <v-main>
-      <router-view />
-    </v-main>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <div :class="['h-2 w-2 rounded-full cursor-default', connected ? 'bg-green-500' : 'bg-red-500']" />
+          </TooltipTrigger>
+          <TooltipContent>{{ connected ? 'Connected' : 'Disconnected' }}</TooltipContent>
+        </Tooltip>
 
-    <!-- Global snackbar for notifications -->
-    <v-snackbar
-      v-model="notify.show"
-      :color="notify.color"
-      :timeout="notify.timeout"
-      location="bottom right"
-      rounded="lg"
-      class="global-snackbar"
-    >
-      {{ notify.message }}
-      <template #actions>
-        <v-btn variant="text" size="small" @click="notify.show = false">Close</v-btn>
-      </template>
-    </v-snackbar>
-  </v-app>
+        <Button variant="ghost" size="icon-sm" @click="themeStore.toggleTheme">
+          <Sun v-if="themeStore.isDark" class="h-4 w-4" />
+          <Moon v-else class="h-4 w-4" />
+        </Button>
+
+        <Button :variant="isSettings ? 'secondary' : 'ghost'" size="icon-sm" @click="toggleSettings">
+          <Settings class="h-4 w-4" />
+        </Button>
+      </header>
+
+      <!-- Content area -->
+      <div class="flex-1 min-h-0 overflow-hidden relative">
+        <!-- Chat view -->
+        <div v-if="!isSettings" class="h-full">
+          <SidebarProvider class="min-h-0 h-full" v-slot="{ toggle }">
+            <SidebarToggleCapture :toggle="toggle" />
+            <AppNavigation />
+            <SidebarInset class="min-h-0">
+              <router-view />
+            </SidebarInset>
+          </SidebarProvider>
+        </div>
+
+        <!-- Settings view -->
+        <div v-else class="h-full overflow-hidden">
+          <router-view />
+        </div>
+      </div>
+    </TooltipProvider>
+
+    <Toaster :theme="themeStore.isDark ? 'dark' : 'light'" position="bottom-right" rich-colors />
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useDisplay } from 'vuetify'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, defineComponent, h, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Toaster } from 'vue-sonner'
+import { Sun, Moon, Settings, Triangle } from 'lucide-vue-next'
 import AppNavigation from './components/AppNavigation.vue'
+import { Button } from './components/ui/button'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './components/ui/tooltip'
+import { SidebarProvider, SidebarInset } from './components/ui/sidebar'
+import { useThemeStore } from './stores/theme'
 import { useNotificationStore } from './stores/notification'
 import axios from 'axios'
 
-const { mobile } = useDisplay()
 const route = useRoute()
+const router = useRouter()
+const themeStore = useThemeStore()
 const notify = useNotificationStore()
 
-const theme = ref(localStorage.getItem('deltachat-theme') || 'dark')
-const drawer = ref(true)
-const rail = ref(true)
 const connected = ref(false)
+const sidebarToggleFn = ref(null)
 
-const isDark = computed(() => theme.value === 'dark')
+// Invisible component to capture sidebar toggle function from scoped slot
+const SidebarToggleCapture = defineComponent({
+  props: { toggle: Function },
+  setup(props) {
+    watch(() => props.toggle, (fn) => { sidebarToggleFn.value = fn }, { immediate: true })
+    return () => null
+  }
+})
+
 const isSettings = computed(() => route.path.startsWith('/settings'))
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 let interval
 
-function toggleTheme() {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  localStorage.setItem('deltachat-theme', theme.value)
-}
-
-function toggleDrawer() {
-  if (mobile.value) {
-    drawer.value = !drawer.value
-  } else {
-    rail.value = !rail.value
-  }
+function toggleSettings() {
+  if (isSettings.value) router.push('/')
+  else router.push('/settings')
 }
 
 async function checkConnection() {
@@ -108,9 +104,10 @@ async function checkConnection() {
 }
 
 onMounted(() => {
-  if (mobile.value) drawer.value = false
   checkConnection()
   interval = setInterval(checkConnection, 10000)
 })
-onUnmounted(() => clearInterval(interval))
+onUnmounted(() => {
+  clearInterval(interval)
+})
 </script>

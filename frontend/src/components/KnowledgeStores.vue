@@ -1,202 +1,227 @@
 <template>
-  <v-container fluid class="pa-3 pa-md-4">
-    <v-row>
-      <!-- Store list column -->
-      <v-col cols="12" sm="4" md="3">
-        <v-card elevation="1">
-          <v-card-title class="d-flex align-center py-3">
-            <span class="text-body-1 font-weight-bold">Knowledge Stores</span>
-            <v-spacer />
-            <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="showCreate = true" />
-          </v-card-title>
-          <v-divider />
-          <v-list density="compact">
-            <v-list-item
-              v-for="ks in knowledgeStore.knowledgeStores"
-              :key="ks.id"
-              :title="ks.name"
-              :subtitle="`${ks.documentCount || 0} documents`"
-              :active="selectedKs?.id === ks.id"
-              rounded="lg"
-              class="ma-1"
-              @click="selectKs(ks)"
-            >
-              <template #prepend>
-                <v-icon icon="mdi-database" size="small" class="mr-1" />
-              </template>
-              <template #append>
-                <v-btn
-                  icon="mdi-delete"
-                  size="x-small"
-                  variant="text"
-                  color="error"
-                  @click.stop="knowledgeStore.deleteKnowledgeStore(ks.id)"
-                />
-              </template>
-            </v-list-item>
-            <v-list-item v-if="!knowledgeStore.knowledgeStores.length">
-              <v-list-item-subtitle class="text-center py-4">No knowledge stores yet</v-list-item-subtitle>
-            </v-list-item>
-          </v-list>
-        </v-card>
-      </v-col>
+  <div class="h-full flex flex-col">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+      <div>
+        <h1 class="text-xl font-bold">Knowledge Stores</h1>
+        <p class="text-sm text-muted-foreground">Manage your document knowledge bases</p>
+      </div>
+      <Button @click="showCreateDialog = true">
+        <Plus class="h-4 w-4 mr-2" />New Store
+      </Button>
+    </div>
 
-      <!-- Documents column -->
-      <v-col cols="12" sm="8" md="9">
-        <v-card v-if="selectedKs" elevation="1">
-          <v-card-title class="d-flex align-center py-3">
-            <v-icon icon="mdi-database" class="mr-2" />
-            <span class="text-body-1 font-weight-bold">{{ selectedKs.name }}</span>
-          </v-card-title>
-          <v-card-subtitle v-if="selectedKs.description" class="pb-2 px-4">
-            {{ selectedKs.description }}
-          </v-card-subtitle>
-          <v-divider />
-          <v-card-text>
-            <!-- Drop zone -->
-            <div
-              class="drop-zone pa-6 text-center mb-4"
-              :class="{ dragging: isDragging }"
-              @dragover.prevent="isDragging = true"
-              @dragleave="isDragging = false"
-              @drop.prevent="handleDrop"
-              @click="$refs.docInput.click()"
-            >
-              <v-icon icon="mdi-cloud-upload" size="40" class="mb-2 text-medium-emphasis" />
-              <div class="text-body-2">Drop files here or click to upload</div>
-              <div class="text-caption text-disabled mt-1">PDF, TXT, MD, DOCX supported</div>
-            </div>
-            <input ref="docInput" type="file" multiple style="display:none" @change="handleFileSelect" />
+    <!-- Content -->
+    <div class="flex-1 overflow-auto p-6">
+      <div class="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6 max-w-5xl">
+        <!-- Store list -->
+        <div>
+          <div v-if="!knowledgeStore.knowledgeStores.length" class="flex flex-col items-center py-14 border border-dashed border-border rounded-lg text-center">
+            <Database class="h-14 w-14 text-muted-foreground/25 mb-4" />
+            <h3 class="text-base font-semibold mb-2">No knowledge stores</h3>
+            <p class="text-sm text-muted-foreground mb-4 max-w-[240px]">Create a store to start uploading documents.</p>
+            <Button size="sm" @click="showCreateDialog = true"><Plus class="h-4 w-4 mr-2" />New Store</Button>
+          </div>
 
-            <!-- Documents list -->
-            <v-list v-if="docs.length" density="compact">
-              <v-list-item
-                v-for="doc in docs"
-                :key="doc.id"
-                :title="doc.name || doc.filename"
-                rounded="lg"
-                class="mb-1"
+          <Card v-else>
+            <div class="divide-y divide-border">
+              <div
+                v-for="ks in knowledgeStore.knowledgeStores"
+                :key="ks.id"
+                :class="[
+                  'flex items-center gap-3 px-3 py-3 cursor-pointer transition-colors',
+                  selected?.id === ks.id
+                    ? 'bg-primary/10 text-primary'
+                    : 'hover:bg-accent'
+                ]"
+                @click="selectStore(ks)"
               >
-                <template #subtitle>
-                  <v-chip :color="statusColor(doc.status)" size="x-small" class="mt-1">
-                    {{ doc.status || 'ready' }}
-                  </v-chip>
-                </template>
-                <template #append>
-                  <v-btn
-                    icon="mdi-delete"
-                    size="x-small"
-                    variant="text"
-                    color="error"
-                    @click="knowledgeStore.deleteDocument(selectedKs.id, doc.id)"
-                  />
-                </template>
-              </v-list-item>
-            </v-list>
-            <div v-else class="text-center text-disabled py-6">
-              <v-icon icon="mdi-file-outline" size="40" class="mb-2" />
-              <div class="text-body-2">No documents uploaded yet</div>
+                <Database class="h-4 w-4 shrink-0" />
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate">{{ ks.name }}</div>
+                  <div class="text-xs text-muted-foreground">{{ ks.documentCount || 0 }} docs</div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  class="text-destructive opacity-0 group-hover:opacity-100"
+                  @click.stop="deleteStore(ks)"
+                >
+                  <Trash2 class="h-3 w-3" />
+                </Button>
+              </div>
             </div>
-          </v-card-text>
-        </v-card>
+          </Card>
+        </div>
 
-        <!-- Empty state when no store selected -->
-        <div
-          v-else
-          class="d-flex align-center justify-center text-disabled"
-          style="min-height: 300px;"
-        >
-          <div class="text-center">
-            <v-icon icon="mdi-database-outline" size="64" class="mb-3 text-medium-emphasis" />
-            <div class="text-body-1 text-medium-emphasis">Select a knowledge store</div>
+        <!-- Document panel -->
+        <div>
+          <Card v-if="selected" class="h-full">
+            <CardHeader>
+              <div class="flex items-center justify-between">
+                <div>
+                  <CardTitle class="text-base">{{ selected.name }}</CardTitle>
+                  <p v-if="selected.description" class="text-xs text-muted-foreground mt-1">{{ selected.description }}</p>
+                </div>
+                <Badge variant="secondary">{{ docs.length }} documents</Badge>
+              </div>
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <!-- Upload zone -->
+              <div
+                :class="[
+                  'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all',
+                  dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-accent/50'
+                ]"
+                @dragover.prevent="dragging = true"
+                @dragleave="dragging = false"
+                @drop.prevent="onDrop"
+                @click="$refs.fileInput.click()"
+              >
+                <Upload class="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+                <p class="text-sm font-medium">Drop files here or click to upload</p>
+                <p class="text-xs text-muted-foreground mt-1">PDF, TXT, MD, DOCX supported</p>
+              </div>
+              <input ref="fileInput" type="file" multiple class="hidden" @change="onFileSelect" />
+
+              <!-- Document list -->
+              <div v-if="docs.length" class="divide-y divide-border rounded-md border">
+                <div v-for="doc in docs" :key="doc.id" class="flex items-center gap-3 px-3 py-2.5">
+                  <FileText class="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span class="text-sm flex-1 truncate">{{ doc.name || doc.filename }}</span>
+                  <Badge :variant="statusBadge(doc.status)">{{ doc.status || 'ready' }}</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    class="text-destructive"
+                    @click="knowledgeStore.deleteDocument(selected.id, doc.id)"
+                  >
+                    <Trash2 class="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+              <div v-else class="flex flex-col items-center py-10 text-center">
+                <FileText class="h-12 w-12 text-muted-foreground/20 mb-3" />
+                <p class="text-sm text-muted-foreground">No documents yet. Upload files above.</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div v-else class="flex flex-col items-center justify-center py-20 border border-dashed border-border rounded-lg min-h-[300px]">
+            <Database class="h-12 w-12 text-muted-foreground/20 mb-4" />
+            <p class="text-sm text-muted-foreground">
+              {{ knowledgeStore.knowledgeStores.length ? 'Select a store to manage documents' : 'Create a knowledge store to get started' }}
+            </p>
           </div>
         </div>
-      </v-col>
-    </v-row>
+      </div>
+    </div>
 
-    <v-dialog v-model="showCreate" max-width="400">
-      <v-card>
-        <v-card-title class="pt-4">Create Knowledge Store</v-card-title>
-        <v-card-text>
-          <v-text-field v-model="newName" label="Name" variant="outlined" class="mb-3" autofocus />
-          <v-textarea v-model="newDesc" label="Description (optional)" variant="outlined" rows="2" />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="showCreate = false">Cancel</v-btn>
-          <v-tooltip :text="!newName.trim() ? 'Name is required' : 'Create knowledge store'" location="top">
-            <template #activator="{ props: tipProps }">
-              <span v-bind="tipProps">
-                <v-btn color="primary" :disabled="!newName.trim()" @click="createKs">Create</v-btn>
-              </span>
-            </template>
-          </v-tooltip>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-  </v-container>
+    <!-- Create dialog -->
+    <Dialog :open="showCreateDialog" @update:open="showCreateDialog = $event">
+      <DialogContent class="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Create Knowledge Store</DialogTitle>
+          <DialogDescription>Add a new knowledge base for your documents.</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-3">
+          <div>
+            <Label class="mb-1.5 block text-xs">Name</Label>
+            <Input v-model="newName" placeholder="Store name" />
+          </div>
+          <div>
+            <Label class="mb-1.5 block text-xs">Description (optional)</Label>
+            <Textarea v-model="newDesc" placeholder="Description…" rows="2" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showCreateDialog = false">Cancel</Button>
+          <Button :disabled="!newName.trim()" @click="createStore">Create</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useKnowledgeStore } from '../stores/knowledge'
+import { useNotificationStore } from '../stores/notification'
+import { Button } from './ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
+import { Input } from './ui/input'
+import { Textarea } from './ui/textarea'
+import { Label } from './ui/label'
+import { Badge } from './ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog'
+import { ScrollArea } from './ui/scroll-area'
+import { Database, Plus, Trash2, Upload, FileText } from 'lucide-vue-next'
 
 const knowledgeStore = useKnowledgeStore()
-const selectedKs = ref(null)
-const showCreate = ref(false)
+const notify = useNotificationStore()
+
+const selected = ref(null)
+const dragging = ref(false)
+const showCreateDialog = ref(false)
 const newName = ref('')
 const newDesc = ref('')
-const isDragging = ref(false)
-const docInput = ref(null)
+const fileInput = ref(null)
 
-const docs = computed(() => selectedKs.value ? (knowledgeStore.documents[selectedKs.value.id] || []) : [])
+const docs = computed(() => selected.value ? (knowledgeStore.documents[selected.value.id] || []) : [])
 
-async function selectKs(ks) {
-  selectedKs.value = ks
+function statusBadge(status) {
+  return { ready: 'success', processing: 'warning', failed: 'destructive' }[status] || 'outline'
+}
+
+async function selectStore(ks) {
+  selected.value = ks
   await knowledgeStore.loadDocuments(ks.id)
 }
 
-async function createKs() {
-  await knowledgeStore.createKnowledgeStore(newName.value, newDesc.value)
-  showCreate.value = false
-  newName.value = ''
-  newDesc.value = ''
+async function deleteStore(ks) {
+  try {
+    await knowledgeStore.deleteKnowledgeStore(ks.id)
+    if (selected.value?.id === ks.id) selected.value = null
+    notify.success('Store deleted')
+  } catch { /* notification already shown by store */ }
 }
 
-async function handleDrop(e) {
-  isDragging.value = false
-  if (!selectedKs.value) return
+async function createStore() {
+  try {
+    await knowledgeStore.createKnowledgeStore(newName.value, newDesc.value)
+    showCreateDialog.value = false
+    newName.value = ''
+    newDesc.value = ''
+    notify.success('Knowledge store created')
+  } catch { /* notification already shown by store */ }
+}
+
+async function onDrop(e) {
+  dragging.value = false
+  if (!selected.value) return
+  let uploaded = 0
   for (const file of e.dataTransfer.files) {
-    await knowledgeStore.uploadDocument(selectedKs.value.id, file)
+    try {
+      await knowledgeStore.uploadDocument(selected.value.id, file)
+      uploaded++
+    } catch { /* notification already shown by store */ }
   }
+  if (uploaded > 0) notify.success(`${uploaded} file(s) uploaded`)
 }
 
-async function handleFileSelect(e) {
-  if (!selectedKs.value) return
+async function onFileSelect(e) {
+  if (!selected.value) return
+  let uploaded = 0
   for (const file of e.target.files) {
-    await knowledgeStore.uploadDocument(selectedKs.value.id, file)
+    try {
+      await knowledgeStore.uploadDocument(selected.value.id, file)
+      uploaded++
+    } catch { /* notification already shown by store */ }
   }
+  if (uploaded > 0) notify.success(`${uploaded} file(s) uploaded`)
 }
 
-function statusColor(status) {
-  return { ready: 'success', processing: 'warning', failed: 'error' }[status] || 'info'
-}
-
-onMounted(() => knowledgeStore.loadKnowledgeStores())
+onMounted(() => {
+  knowledgeStore.loadKnowledgeStores()
+})
 </script>
-
-<style scoped>
-.drop-zone {
-  border: 2px dashed rgba(var(--v-theme-primary), 0.3);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  background: rgba(var(--v-theme-primary), 0.02);
-}
-.drop-zone:hover,
-.drop-zone.dragging {
-  border-color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.06);
-  transform: scale(1.01);
-}
-</style>

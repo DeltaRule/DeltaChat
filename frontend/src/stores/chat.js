@@ -111,12 +111,15 @@ export const useChatStore = defineStore('chat', () => {
       }, 60000)
     })
 
-    socket.on('chat:done', ({ message: doneMsg } = {}) => {
+    socket.on('chat:done', ({ message: doneMsg, sources } = {}) => {
       streaming.value = false
       _cleanupStreamListeners()
       // Update the assistant message with server data if available
       if (doneMsg && messages[chatId][idx]) {
         messages[chatId][idx] = { ...messages[chatId][idx], ...doneMsg }
+        if (sources?.length) {
+          messages[chatId][idx].sources = sources
+        }
       }
     })
 

@@ -1,6 +1,6 @@
 'use strict';
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { getAdapter, DeltaDatabaseAdapter, Entity } from '../db/DeltaDatabaseAdapter';
 import ModelProviderBase from '../modules/ModelProvider/ModelProviderBase';
 import OpenAIProvider from '../modules/ModelProvider/OpenAIProvider';
@@ -20,8 +20,17 @@ interface ChatMessage {
 
 interface StreamCallbacks {
   onChunk: (chunk: string) => void;
-  onDone: (fullContent: string, message: Entity) => void;
+  onDone: (fullContent: string, message: Entity, sources?: RagSource[]) => void;
   onError: (err: AppError) => void;
+}
+
+interface RagSource {
+  docId: string;
+  storeId: string;
+  text: string;
+  score: number;
+  chunkId: string;
+  filename?: string;
 }
 
 interface SendMessageOpts {
@@ -121,7 +130,7 @@ class ChatService {
 
   async createChat(data: Record<string, unknown> = {}): Promise<Entity> {
     return this._db.createChat({
-      id: uuidv4(),
+      id: randomUUID(),
       title: (data['title'] as string | undefined) ?? (data['name'] as string | undefined) ?? 'New Chat',
       model: (data['model'] as string | null | undefined) ?? null,
       modelId: (data['modelId'] as string | null | undefined) ?? null,
@@ -168,25 +177,26 @@ class ChatService {
     const chat = await this.getChat(chatId);
 
     const userMessage = await this._db.createMessage({
-      id: uuidv4(),
+      id: randomUUID(),
       chatId,
       role: 'user',
       content: userContent,
     });
 
     const resolved = await this._resolveModelConfig(opts, chat);
-    const messages = await this._buildMessages(chat, userContent, resolved.systemPromptOverride, resolved.knowledgeStoreIdsOverride);
+    const { messages, sources } = await this._buildMessages(chat, userContent, resolved.systemPromptOverride, resolved.knowledgeStoreIdsOverride);
 
     const provider = await this._resolveProvider(opts, chat);
     const result = await provider.chat(messages, resolved.modelOpts);
 
     const assistantMessage = await this._db.createMessage({
-      id: uuidv4(),
+      id: randomUUID(),
       chatId,
       role: 'assistant',
       content: result.content,
       model: result.model,
       usage: result.usage,
+      sources: sources.length > 0 ? sources : null,
     });
 
     if (chat.messages.length === 0 && !(chat['title'] as string | undefined)?.trim()) {
@@ -211,14 +221,14 @@ class ChatService {
     }
 
     await this._db.createMessage({
-      id: uuidv4(),
+      id: randomUUID(),
       chatId,
       role: 'user',
       content: userContent,
     });
 
     const resolved = await this._resolveModelConfig(opts, chat);
-    const messages = await this._buildMessages(chat, userContent, resolved.systemPromptOverride, resolved.knowledgeStoreIdsOverride);
+    const { messages, sources } = await this._buildMessages(chat, userContent, resolved.systemPromptOverride, resolved.knowledgeStoreIdsOverride);
     const provider = await this._resolveProvider(opts, chat);
 
     let full = '';
@@ -229,14 +239,15 @@ class ChatService {
       }
 
       const assistantMessage = await this._db.createMessage({
-        id: uuidv4(),
+        id: randomUUID(),
         chatId,
         role: 'assistant',
         content: full,
         model: (resolved.modelOpts['model'] ?? opts.model ?? chat['model'] ?? null) as string | null,
+        sources: sources.length > 0 ? sources : null,
       });
 
-      onDone(full, assistantMessage);
+      onDone(full, assistantMessage, sources.length > 0 ? sources : undefined);
     } catch (err) {
       onError(err as AppError);
     }
@@ -249,7 +260,7 @@ class ChatService {
     newUserContent: string,
     systemPromptOverride?: string,
     knowledgeStoreIdsOverride?: string[]
-  ): Promise<ChatMessage[]> {
+  ): Promise<{ messages: ChatMessage[]; sources: RagSource[] }> {
     const history: ChatMessage[] = (chat.messages ?? []).map((m) => ({
       role: m['role'] as string,
       content: m['content'] as string,
@@ -259,6 +270,7 @@ class ChatService {
       ?? (Array.isArray(chat['knowledgeStoreIds']) ? (chat['knowledgeStoreIds'] as string[]) : []);
 
     let ragContext = '';
+    const sources: RagSource[] = [];
     if (this._knowledgeService && knowledgeStoreIds.length > 0) {
       try {
         const results = await this._knowledgeService.retrieve(
@@ -270,6 +282,25 @@ class ChatService {
           ragContext =
             '\n\n---\nRelevant context from knowledge base:\n' +
             results.map((r, i) => `[${i + 1}] ${r.text}`).join('\n\n');
+
+          // Resolve document filenames for source references
+          for (const r of results) {
+            let filename: string | undefined;
+            if (r.docId) {
+              try {
+                const doc = await this._knowledgeService.getDocument(r.storeId, r.docId as string);
+                filename = doc?.['filename'] as string | undefined;
+              } catch { /* ignore */ }
+            }
+            sources.push({
+              docId: (r.docId as string) ?? '',
+              storeId: r.storeId,
+              text: r.text.slice(0, 300),
+              score: r.score,
+              chunkId: r.id,
+              filename,
+            });
+          }
         }
       } catch (err) {
         console.error('[ChatService] RAG retrieval failed:', (err as Error).message);
@@ -288,7 +319,7 @@ class ChatService {
 
     messages.push({ role: 'user', content: newUserContent });
 
-    return messages;
+    return { messages, sources };
   }
 
   private async _resolveProvider(opts: SendMessageOpts, chat?: Entity): Promise<ModelProviderBase> {

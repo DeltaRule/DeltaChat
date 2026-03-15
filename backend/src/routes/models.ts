@@ -1,7 +1,7 @@
 'use strict';
 
 import { Router, Request, Response, NextFunction } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { getAdapter } from '../db/DeltaDatabaseAdapter';
 
 const router = Router();
@@ -23,7 +23,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const db = getAdapter();
     const body = req.body as Record<string, unknown>;
     const model = await db.createAiModel({
-      id: uuidv4(),
+      id: randomUUID(),
       name: body['name'] ?? 'Unnamed Model',
       description: body['description'] ?? null,
       type: body['type'] ?? 'model',

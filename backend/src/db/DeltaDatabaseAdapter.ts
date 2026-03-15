@@ -1,9 +1,9 @@
 'use strict';
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import config from '../config';
-import { validate } from './schema';
+import { validate, SCHEMAS, toJsonSchema } from './schema';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -28,29 +28,35 @@ export interface DeleteResult {
 
 // ── DeltaDatabaseClient ───────────────────────────────────────────────────────
 //
-// Uses DeltaDatabase REST API (https://deltadatabase.readthedocs.io/).
+// Uses DeltaDatabase REST API as described in usage_deltadb.md.
 //
 // Authentication: The admin key (or a scoped dk_… API key) is used directly as
 // the Bearer token. No login step is needed — the key is static and does not
 // expire unless explicitly set when creating a scoped API key.
 //
-// Data model: A single DeltaDatabase "database" is used. Collections are
-// simulated with key prefixes, e.g. `chats:<id>`, `messages:<id>`.
-// A per-collection index entity (`<collection>:_index`) keeps a list of all
-// active keys so we can enumerate them.
+// Data model: Each collection maps to its own schema_id (the schema IS the
+// database). The optional `dbPrefix` is prepended to form the schema_id, e.g.
+// collection "chats" with prefix "deltachat" → schema_id "deltachat.chats".
+// Entity keys within a schema are plain IDs (no collection prefix).
+// A per-schema index entity (key "_index") keeps a list of all active keys.
 // ───────────────────────────────────────────────────────────────────────────────
 
 export class DeltaDatabaseClient {
   public readonly baseUrl: string;
   public readonly apiKey: string;
-  public readonly database: string;
+  public readonly dbPrefix: string;
   public readonly _http: AxiosInstance;
 
-  constructor(baseUrl: string, apiKey: string, database: string) {
+  constructor(baseUrl: string, apiKey: string, dbPrefix: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.apiKey = apiKey;
-    this.database = database || 'deltachat';
+    this.dbPrefix = dbPrefix || '';
     this._http = axios.create({ baseURL: this.baseUrl, timeout: 15000 });
+  }
+
+  /** Build the schema_id from a collection name: `{dbPrefix}.{collection}` */
+  _schemaId(collection: string): string {
+    return this.dbPrefix ? `${this.dbPrefix}.${collection}` : collection;
   }
 
   /** Authorization header — admin key / API key used directly as Bearer token. */
@@ -58,19 +64,21 @@ export class DeltaDatabaseClient {
     return { Authorization: `Bearer ${this.apiKey}` };
   }
 
-  // ── Low-level DeltaDatabase operations ────────────────────────────────────
+  // ── Low-level DeltaDatabase entity operations ─────────────────────────────
 
-  /** PUT /entity/{database} — create or update one or more entities. */
-  async _put(entities: Record<string, unknown>): Promise<void> {
-    await this._http.put(`/entity/${this.database}`, entities, {
+  /** PUT /entity/{schema_id} — create or update one or more entities. */
+  async _put(collection: string, entities: Record<string, unknown>): Promise<void> {
+    const schemaId = this._schemaId(collection);
+    await this._http.put(`/entity/${schemaId}`, entities, {
       headers: this._headers(),
     });
   }
 
-  /** GET /entity/{database}?key=… — retrieve a single entity (or null). */
-  async _get(key: string): Promise<unknown> {
+  /** GET /entity/{schema_id}?key=… — retrieve a single entity (or null). */
+  async _get(collection: string, key: string): Promise<unknown> {
+    const schemaId = this._schemaId(collection);
     try {
-      const { data } = await this._http.get<unknown>(`/entity/${this.database}`, {
+      const { data } = await this._http.get<unknown>(`/entity/${schemaId}`, {
         params: { key },
         headers: this._headers(),
       });
@@ -82,10 +90,11 @@ export class DeltaDatabaseClient {
     }
   }
 
-  /** DELETE /entity/{database}?key=… — permanently delete a single entity. */
-  async _deleteEntity(key: string): Promise<void> {
+  /** DELETE /entity/{schema_id}?key=… — permanently delete a single entity. */
+  async _deleteEntity(collection: string, key: string): Promise<void> {
+    const schemaId = this._schemaId(collection);
     try {
-      await this._http.delete(`/entity/${this.database}`, {
+      await this._http.delete(`/entity/${schemaId}`, {
         params: { key },
         headers: this._headers(),
       });
@@ -97,17 +106,59 @@ export class DeltaDatabaseClient {
     }
   }
 
+  // ── Schema management (per usage_deltadb.md) ──────────────────────────────
+
+  /** GET /admin/schemas — list all defined schema IDs. */
+  async listSchemas(): Promise<string[]> {
+    const { data } = await this._http.get<string[]>('/admin/schemas');
+    return data;
+  }
+
+  /** GET /schema/{schemaID} — retrieve a JSON Schema document (or null). */
+  async getSchema(schemaId: string): Promise<unknown> {
+    try {
+      const { data } = await this._http.get<unknown>(`/schema/${schemaId}`);
+      return data;
+    } catch (err) {
+      const axErr = err as AxiosError;
+      if (axErr.response?.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** PUT /schema/{schemaID} — create or replace a JSON Schema. */
+  async putSchema(schemaId: string, schema: Record<string, unknown>): Promise<void> {
+    await this._http.put(`/schema/${schemaId}`, schema, {
+      headers: this._headers(),
+    });
+  }
+
+  /**
+   * Register all application JSON Schemas in DeltaDatabase.
+   * Called once at startup so that PUT /entity validation works.
+   */
+  async initSchemas(): Promise<void> {
+    for (const collection of Object.keys(SCHEMAS)) {
+      const schemaId = this._schemaId(collection);
+      const jsonSchema = toJsonSchema(collection, schemaId);
+      if (jsonSchema) {
+        await this.putSchema(schemaId, jsonSchema);
+        console.log(`[DeltaDB] Registered schema: ${schemaId}`);
+      }
+    }
+  }
+
   // ── Index management ──────────────────────────────────────────────────────
 
   async _readIndex(collection: string): Promise<IndexDoc> {
-    return ((await this._get(`${collection}:_index`)) as IndexDoc | null) ?? { keys: [] };
+    return ((await this._get(collection, '_index')) as IndexDoc | null) ?? { keys: [] };
   }
 
   async _addToIndex(collection: string, id: string): Promise<void> {
     const idx = await this._readIndex(collection);
     if (!idx.keys.includes(id)) {
       idx.keys.push(id);
-      await this._put({ [`${collection}:_index`]: idx });
+      await this._put(collection, { _index: idx });
     }
   }
 
@@ -116,28 +167,28 @@ export class DeltaDatabaseClient {
     const before = idx.keys.length;
     idx.keys = idx.keys.filter((k) => k !== id);
     if (idx.keys.length !== before) {
-      await this._put({ [`${collection}:_index`]: idx });
+      await this._put(collection, { _index: idx });
     }
   }
 
   // ── Secondary index management ────────────────────────────────────────────
 
   async _addToSecondaryIndex(collection: string, field: string, value: unknown, id: string): Promise<void> {
-    const key = `${collection}:_idx:${field}:${String(value)}`;
-    const idx = ((await this._get(key)) as IndexDoc | null) ?? { keys: [] };
+    const key = `_idx:${field}:${String(value)}`;
+    const idx = ((await this._get(collection, key)) as IndexDoc | null) ?? { keys: [] };
     if (!idx.keys.includes(id)) {
       idx.keys.push(id);
-      await this._put({ [key]: idx });
+      await this._put(collection, { [key]: idx });
     }
   }
 
   async _removeFromSecondaryIndex(collection: string, field: string, value: unknown, id: string): Promise<void> {
-    const key = `${collection}:_idx:${field}:${String(value)}`;
-    const idx = ((await this._get(key)) as IndexDoc | null) ?? { keys: [] };
+    const key = `_idx:${field}:${String(value)}`;
+    const idx = ((await this._get(collection, key)) as IndexDoc | null) ?? { keys: [] };
     const before = idx.keys.length;
     idx.keys = idx.keys.filter((k) => k !== id);
     if (idx.keys.length !== before) {
-      await this._put({ [key]: idx });
+      await this._put(collection, { [key]: idx });
     }
   }
 
@@ -145,7 +196,7 @@ export class DeltaDatabaseClient {
 
   async insert(collection: string, doc: Record<string, unknown>, secondaryIndexFields: string[] = []): Promise<Entity> {
     const now = new Date().toISOString();
-    const id = (doc['id'] as string | undefined) ?? uuidv4();
+    const id = (doc['id'] as string | undefined) ?? randomUUID();
     const entity: Entity = {
       ...doc,
       id,
@@ -155,7 +206,7 @@ export class DeltaDatabaseClient {
 
     validate(collection, entity as Record<string, unknown>);
 
-    await this._put({ [`${collection}:${id}`]: entity });
+    await this._put(collection, { [id]: entity });
     await this._addToIndex(collection, id);
 
     for (const field of secondaryIndexFields) {
@@ -169,12 +220,12 @@ export class DeltaDatabaseClient {
   async findAll(collection: string): Promise<Entity[]> {
     const idx = await this._readIndex(collection);
     if (!idx.keys.length) return [];
-    const docs = await Promise.all(idx.keys.map((id) => this._get(`${collection}:${id}`)));
+    const docs = await Promise.all(idx.keys.map((id) => this._get(collection, id)));
     return (docs as (Entity | null)[]).filter((d): d is Entity => !!d);
   }
 
   async findById(collection: string, id: string): Promise<Entity | null> {
-    const doc = (await this._get(`${collection}:${id}`)) as Entity | null;
+    const doc = (await this._get(collection, id)) as Entity | null;
     return doc ?? null;
   }
 
@@ -188,7 +239,7 @@ export class DeltaDatabaseClient {
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
     };
-    await this._put({ [`${collection}:${id}`]: updated });
+    await this._put(collection, { [id]: updated });
     return updated;
   }
 
@@ -196,8 +247,7 @@ export class DeltaDatabaseClient {
     const existing = await this.findById(collection, id);
     if (!existing) return { ok: false };
 
-    // Use proper DELETE /entity/{database}?key=… endpoint
-    await this._deleteEntity(`${collection}:${id}`);
+    await this._deleteEntity(collection, id);
     await this._removeFromIndex(collection, id);
 
     for (const { field, value } of secondaryIndexes) {
@@ -211,12 +261,12 @@ export class DeltaDatabaseClient {
     if (!filterEntries.length) return this.findAll(collection);
 
     const [field, value] = filterEntries[0] as [string, unknown];
-    const idxKey = `${collection}:_idx:${field}:${String(value)}`;
-    const idx = ((await this._get(idxKey)) as IndexDoc | null) ?? { keys: [] };
+    const idxKey = `_idx:${field}:${String(value)}`;
+    const idx = ((await this._get(collection, idxKey)) as IndexDoc | null) ?? { keys: [] };
 
     let docs: Entity[];
     if (idx.keys.length > 0) {
-      const fetched = await Promise.all(idx.keys.map((id) => this._get(`${collection}:${id}`)));
+      const fetched = await Promise.all(idx.keys.map((id) => this._get(collection, id)));
       docs = (fetched as (Entity | null)[]).filter((d): d is Entity => !!d);
     } else {
       docs = await this.findAll(collection);
@@ -256,7 +306,7 @@ export class DeltaDatabaseAdapter {
     );
     console.log(
       `[DeltaDB] Using DeltaDatabase at ${config.deltaDb.url}` +
-      ` (database: "${config.deltaDb.database}", auth: Bearer <admin-key>)`
+      ` (prefix: "${config.deltaDb.database}", auth: Bearer <admin-key>)`
     );
   }
 

@@ -13,23 +13,25 @@ describe('DeltaDatabaseAdapter', () => {
   describe('constructor', () => {
     test('throws if DELTA_DB_URL is not set', () => {
       jest.resetModules();
-      const savedUrl = process.env['DELTA_DB_URL'];
-      delete process.env['DELTA_DB_URL'];
+      jest.doMock('../../config', () => ({
+        __esModule: true,
+        default: { deltaDb: { url: '', adminKey: 'testkey', database: 'testdb' } },
+      }));
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { DeltaDatabaseAdapter: Adapter } = require('../DeltaDatabaseAdapter') as { DeltaDatabaseAdapter: new () => DeltaDatabaseAdapter };
       expect(() => new Adapter()).toThrow('DELTA_DB_URL is required');
-      process.env['DELTA_DB_URL'] = savedUrl;
       jest.resetModules();
     });
 
     test('throws if DELTA_DB_ADMIN_KEY is not set', () => {
       jest.resetModules();
-      const savedKey = process.env['DELTA_DB_ADMIN_KEY'];
-      delete process.env['DELTA_DB_ADMIN_KEY'];
+      jest.doMock('../../config', () => ({
+        __esModule: true,
+        default: { deltaDb: { url: 'http://localhost:8080', adminKey: '', database: 'testdb' } },
+      }));
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { DeltaDatabaseAdapter: Adapter } = require('../DeltaDatabaseAdapter') as { DeltaDatabaseAdapter: new () => DeltaDatabaseAdapter };
       expect(() => new Adapter()).toThrow('DELTA_DB_ADMIN_KEY is required');
-      process.env['DELTA_DB_ADMIN_KEY'] = savedKey;
       jest.resetModules();
     });
 

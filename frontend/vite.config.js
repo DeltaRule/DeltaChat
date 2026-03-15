@@ -1,13 +1,19 @@
+import path from 'node:path'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import vuetify from 'vite-plugin-vuetify'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   base: './',
   plugins: [
     vue(),
-    vuetify({ autoImport: true }),
+    tailwindcss(),
   ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   server: {
     proxy: {
       '/api': 'http://localhost:3000',

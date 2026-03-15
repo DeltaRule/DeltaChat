@@ -5,8 +5,8 @@ const config = {
   port: parseInt(process.env['PORT'] ?? '3000', 10),
   nodeEnv: process.env['NODE_ENV'] ?? 'development',
   deltaDb: {
-    url: process.env['DELTA_DB_URL'] ?? 'http://localhost:8080',
-    adminKey: process.env['DELTA_DB_ADMIN_KEY'] ?? 'changeme',
+    url: process.env['DELTA_DB_URL'] ?? '',
+    adminKey: process.env['DELTA_DB_ADMIN_KEY'] ?? '',
     database: process.env['DELTA_DB_DATABASE'] ?? 'deltachat',
   },
   openai: {

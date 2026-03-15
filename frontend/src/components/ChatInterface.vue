@@ -1,193 +1,165 @@
 <template>
-  <div class="chat-layout">
-    <!-- ── Main chat area ──────────────────────────────────── -->
-    <section class="chat-main">
-      <!-- Toolbar -->
-      <v-toolbar density="compact" color="transparent" class="chat-toolbar" style="border-bottom: 1px solid rgba(var(--v-border-color), 0.08);">
-        <v-toolbar-title>
-          <div v-if="currentChat" class="d-flex align-center" style="max-width: 350px;">
-            <v-icon icon="mdi-chat-outline" size="18" class="mr-2 text-medium-emphasis" />
-            <span
-              v-if="!editingTitle"
-              class="text-body-2 font-weight-bold text-truncate"
-              style="cursor: pointer;"
-              @click="startEditTitle"
-            >{{ chatTitle || 'Untitled Chat' }}</span>
-            <v-text-field
-              v-else
-              ref="titleInput"
-              v-model="chatTitle"
-              variant="plain"
-              hide-details
-              density="compact"
-              placeholder="Chat name…"
-              style="font-weight: 600;"
-              @blur="finishEditTitle"
-              @keydown.enter.prevent="finishEditTitle"
-              @keydown.escape.prevent="cancelEditTitle"
-            />
-            <v-btn
-              v-if="!editingTitle"
-              icon="mdi-pencil-outline"
-              variant="text"
-              size="x-small"
-              class="ml-1 text-medium-emphasis"
-              @click="startEditTitle"
-            />
-          </div>
-          <span v-else class="text-body-2 text-medium-emphasis font-weight-medium">New Conversation</span>
-        </v-toolbar-title>
-        <v-spacer />
-      </v-toolbar>
+  <div class="flex flex-col h-full min-h-0 overflow-hidden">
+    <!-- Toolbar -->
+    <div class="flex items-center h-10 px-4 border-b border-border shrink-0">
+      <div v-if="currentChat" class="flex items-center gap-2 max-w-[350px]">
+        <MessageSquare class="h-4 w-4 text-muted-foreground" />
+        <span
+          v-if="!editingTitle"
+          class="text-sm font-semibold truncate cursor-pointer hover:text-primary transition-colors"
+          @click="startEditTitle"
+        >{{ chatTitle || 'Untitled Chat' }}</span>
+        <input
+          v-else
+          ref="titleInput"
+          v-model="chatTitle"
+          class="text-sm font-semibold bg-transparent border-none outline-none ring-0 w-full"
+          placeholder="Chat name…"
+          @blur="finishEditTitle"
+          @keydown.enter.prevent="finishEditTitle"
+          @keydown.escape.prevent="cancelEditTitle"
+        />
+        <Button v-if="!editingTitle" variant="ghost" size="icon-xs" @click="startEditTitle">
+          <Pencil class="h-3 w-3 text-muted-foreground" />
+        </Button>
+      </div>
+      <span v-else class="text-sm text-muted-foreground font-medium">New Conversation</span>
+      <div class="flex-1" />
+    </div>
 
-      <!-- Messages / welcome screen -->
-      <div ref="messagesContainer" class="chat-messages">
-        <template v-if="currentChatMessages.length">
-          <ChatMessage
-            v-for="msg in currentChatMessages"
-            :key="msg.id"
-            :message="msg"
-          />
-          <div v-if="chatStore.streaming" class="d-flex align-center mb-4 message-row" style="max-width: 800px; margin: 0 auto; width: 100%;">
-            <v-avatar color="primary" size="34" class="mr-3" rounded="lg" style="box-shadow: 0 2px 8px rgba(124, 77, 255, 0.3);">
-              <v-icon icon="mdi-robot" size="20" />
-            </v-avatar>
-            <div class="message-bubble message-assistant d-flex align-center" style="white-space: nowrap; gap: 8px;">
-              <v-progress-circular indeterminate size="16" width="2" color="primary" />
-              <span class="text-caption text-medium-emphasis">Thinking…</span>
-              <v-btn
-                size="x-small"
-                variant="text"
-                color="error"
-                style="min-width: auto;"
-                @click="chatStore.stopStreaming()"
-              >
-                STOP
-              </v-btn>
-            </div>
-          </div>
-        </template>
+    <!-- Messages / welcome screen -->
+    <div ref="messagesContainer" class="flex-1 min-h-0 overflow-y-auto px-6 py-4 flex flex-col">
+      <template v-if="currentChatMessages.length">
+        <ChatMessage
+          v-for="msg in currentChatMessages"
+          :key="msg.id"
+          :message="msg"
+          :is-streaming="chatStore.streaming && msg === currentChatMessages[currentChatMessages.length - 1] && msg.role === 'assistant'"
+        />
+      </template>
 
-        <!-- Welcome greeting — no chat selected -->
-        <div v-else-if="!chatStore.currentChatId" class="welcome-screen">
-          <div class="welcome-glow" />
-          <div class="welcome-glow-secondary" />
-          <div class="welcome-avatar-container">
-            <v-avatar color="primary" size="88" rounded="xl" class="mb-6 welcome-avatar">
-              <v-icon icon="mdi-delta" size="52" color="white" />
-            </v-avatar>
-            <div class="welcome-avatar-ring" />
-          </div>
-          <h1 class="text-h4 font-weight-bold mb-3 gradient-text" style="letter-spacing: -0.5px;">Welcome to DeltaChat</h1>
-          <p class="text-body-1 text-medium-emphasis mb-8" style="max-width: 440px; line-height: 1.7;">
-            Your AI-powered chat assistant. Type a message below to start a conversation.
-          </p>
-          <div class="d-flex flex-wrap justify-center ga-3 quick-actions">
-            <div class="quick-action-card" @click="inputMessage = 'Explain quantum computing simply'">
-              <v-icon icon="mdi-lightbulb-outline" color="primary" size="22" class="mb-2" />
-              <div class="text-body-2 font-weight-medium">Explain a concept</div>
-              <div class="text-caption text-disabled">Learn something new</div>
-            </div>
-            <div class="quick-action-card" @click="inputMessage = 'Write a Python function to sort a list'">
-              <v-icon icon="mdi-code-tags" color="secondary" size="22" class="mb-2" />
-              <div class="text-body-2 font-weight-medium">Write code</div>
-              <div class="text-caption text-disabled">Generate solutions</div>
-            </div>
-            <div class="quick-action-card" @click="inputMessage = 'Summarize the key points of...'">
-              <v-icon icon="mdi-text-box-outline" color="info" size="22" class="mb-2" />
-              <div class="text-body-2 font-weight-medium">Summarize text</div>
-              <div class="text-caption text-disabled">Condense information</div>
-            </div>
+      <!-- Welcome greeting -->
+      <div v-else-if="!chatStore.currentChatId" class="flex-1 flex flex-col items-center justify-center text-center px-4 relative">
+        <div class="absolute w-[500px] h-[500px] rounded-full bg-primary/10 blur-3xl pointer-events-none animate-[pulseGlow_4s_ease-in-out_infinite]" style="top:50%;left:50%;transform:translate(-50%,-55%);"></div>
+        <div class="relative mb-6 animate-[float_4s_ease-in-out_infinite]">
+          <div class="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-xl shadow-primary/35">
+            <Triangle class="h-12 w-12" />
           </div>
         </div>
-
-        <!-- Empty chat selected but no messages -->
-        <div
-          v-else
-          class="d-flex align-center justify-center text-disabled"
-          style="height: 100%; min-height: 200px;"
-        >
-          <div class="text-center">
-            <v-icon icon="mdi-chat-outline" size="64" class="mb-4 text-medium-emphasis" />
-            <div class="text-h6 text-medium-emphasis">No messages yet</div>
-            <div class="text-body-2 text-disabled mt-2">Say something to get started</div>
+        <h1 class="text-3xl font-bold mb-3 gradient-text tracking-tight">Welcome to DeltaChat</h1>
+        <p class="text-muted-foreground mb-8 max-w-[440px] leading-relaxed">
+          Your AI-powered chat assistant. Type a message below to start a conversation.
+        </p>
+        <div class="flex flex-wrap justify-center gap-3 animate-[fadeInUp_0.6s_ease-out_0.3s_both]">
+          <div
+            v-for="action in quickActions"
+            :key="action.label"
+            class="flex flex-col items-center p-5 rounded-xl border border-border bg-card/50 backdrop-blur-sm cursor-pointer transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 hover:border-primary/25 min-w-[160px]"
+            @click="inputMessage = action.prompt"
+          >
+            <component :is="action.icon" :class="['h-5 w-5 mb-2', action.color]" />
+            <div class="text-sm font-medium">{{ action.label }}</div>
+            <div class="text-xs text-muted-foreground">{{ action.desc }}</div>
           </div>
         </div>
       </div>
 
-      <!-- Input area — always visible -->
-      <div class="chat-input-wrapper">
-        <v-sheet class="chat-input" color="transparent" rounded="0">
-          <!-- Model selector above input -->
-          <div class="mb-2">
-            <v-select
-              v-model="selectedModelId"
-              :items="modelItems"
-              item-title="name"
-              item-value="id"
-              density="compact"
-              hide-details
-              variant="outlined"
-              label="Model"
-              placeholder="Select a model…"
-              style="max-width: 260px;"
-              class="model-select"
+      <!-- Empty chat -->
+      <div v-else class="flex-1 flex items-center justify-center">
+        <div class="text-center">
+          <MessageSquare class="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
+          <div class="text-lg text-muted-foreground">No messages yet</div>
+          <div class="text-sm text-muted-foreground/70 mt-2">Say something to get started</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="shrink-0 border-t border-border bg-gradient-to-t from-background to-background/90 backdrop-blur-lg px-4 py-3">
+      <div class="max-w-[800px] mx-auto">
+        <!-- Model selector -->
+        <div class="mb-2">
+          <Select v-model="selectedModelId">
+            <SelectTrigger class="max-w-[260px]">
+              <SelectValue placeholder="Select a model…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="m in modelItems" :key="m.value" :value="m.value">{{ m.title }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <!-- Input box -->
+        <div class="bg-muted/50 border border-border rounded-2xl px-3 py-2 transition-all focus-within:border-primary/35 focus-within:shadow-lg focus-within:shadow-primary/10">
+          <!-- Attached files strip -->
+          <div v-if="attachedFiles.length" class="flex flex-wrap gap-2 mb-2">
+            <div
+              v-for="(file, i) in attachedFiles"
+              :key="i"
+              class="flex items-center gap-1.5 bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs max-w-[200px] group"
             >
-              <template #selection="{ item }">
-                <span class="text-body-2">{{ item.raw.name }}</span>
-              </template>
-              <template #item="{ item, props: itemProps }">
-                <v-list-item v-bind="itemProps" :title="item.raw.name" />
-              </template>
-            </v-select>
+              <component :is="fileIcon(file)" class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span class="truncate" :title="file.name">{{ shortenName(file.name) }}</span>
+              <button
+                class="ml-0.5 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                @click="removeFile(i)"
+              >
+                <X class="h-3 w-3" />
+              </button>
+            </div>
           </div>
-          <div class="chat-input-box">
-            <v-textarea
+          <div class="flex items-end gap-2">
+            <textarea
+              ref="textareaRef"
               v-model="inputMessage"
               placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
-              variant="outlined"
               rows="1"
-              auto-grow
-              max-rows="6"
-              hide-details
-              class="chat-textarea"
+              class="flex-1 bg-transparent border-none outline-none ring-0 resize-none text-sm min-h-[36px] max-h-[150px] py-2"
               @keydown.enter.exact.prevent="sendMessage"
+              @input="autoResize"
             />
-            <div class="chat-input-actions">
-              <v-btn
-                icon="mdi-attachment"
-                variant="text"
-                size="small"
-                class="text-medium-emphasis"
-                @click="$refs.fileInput.click()"
-              />
-              <v-btn
-                icon="mdi-send"
-                color="primary"
-                size="small"
-                variant="tonal"
-                :disabled="!inputMessage.trim() || chatStore.streaming"
+            <div class="flex items-center gap-1 shrink-0">
+              <Button variant="ghost" size="icon-sm" class="text-muted-foreground" @click="$refs.fileInput.click()">
+                <Paperclip class="h-4 w-4" />
+              </Button>
+              <Button
+                v-if="chatStore.streaming"
+                size="icon-sm"
+                variant="destructive"
+                @click="chatStore.stopStreaming()"
+              >
+                <Square class="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                v-else
+                size="icon-sm"
+                :disabled="!canSend"
                 @click="sendMessage"
-              />
+              >
+                <Send class="h-4 w-4" />
+              </Button>
             </div>
           </div>
-          <input ref="fileInput" type="file" style="display:none" @change="handleFileAttach" />
-        </v-sheet>
+        </div>
+        <input ref="fileInput" type="file" multiple class="hidden" @change="handleFileAttach" />
       </div>
-    </section>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { useDisplay } from 'vuetify'
 import { useChatStore } from '../stores/chat'
 import { useModelsStore } from '../stores/models'
 import ChatMessage from './ChatMessage.vue'
+import { Button } from './ui/button'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select'
+import {
+  MessageSquare, Pencil, Bot, Triangle, Send, Square,
+  Paperclip, Lightbulb, Code, FileText, X, File, Image, FileSpreadsheet, FileCode
+} from 'lucide-vue-next'
 
 const chatStore = useChatStore()
 const modelsStore = useModelsStore()
-const { mobile } = useDisplay()
 
 const inputMessage = ref('')
 const selectedModelId = ref(localStorage.getItem('deltachat-selected-model') || null)
@@ -196,22 +168,46 @@ const editingTitle = ref(false)
 const titleInput = ref(null)
 const messagesContainer = ref(null)
 const fileInput = ref(null)
+const textareaRef = ref(null)
+const attachedFiles = ref([])
+
+const quickActions = [
+  { label: 'Explain a concept', desc: 'Learn something new', prompt: 'Explain quantum computing simply', icon: Lightbulb, color: 'text-primary' },
+  { label: 'Write code', desc: 'Generate solutions', prompt: 'Write a Python function to sort a list', icon: Code, color: 'text-green-500' },
+  { label: 'Summarize text', desc: 'Condense information', prompt: 'Summarize the key points of...', icon: FileText, color: 'text-blue-500' },
+]
 
 const modelItems = computed(() => {
-  const models = modelsStore.aiModels.filter(m => m.enabled !== false).map(m => ({ name: m.name || 'Unnamed Model', id: m.id }))
-  // Only show "No model selected" if there are no models at all
-  if (!models.length) return [{ name: 'No model selected', id: null }]
+  const models = modelsStore.aiModels.filter(m => m.enabled !== false && m.type !== 'embedding').map(m => ({ title: m.name || 'Unnamed Model', value: m.id }))
+  if (!models.length) return [{ title: 'No model selected', value: null }]
   return models
 })
 
-const currentChat = computed(() =>
-  chatStore.chats.find(c => c.id === chatStore.currentChatId)
-)
-const currentChatMessages = computed(() =>
-  chatStore.messages[chatStore.currentChatId] || []
-)
+const currentChat = computed(() => chatStore.chats.find(c => c.id === chatStore.currentChatId))
+const currentChatMessages = computed(() => chatStore.messages[chatStore.currentChatId] || [])
+const canSend = computed(() => (inputMessage.value.trim() || attachedFiles.value.length) && !chatStore.streaming)
 
-// Sync title and model when current chat changes
+function shortenName(name, maxLen = 20) {
+  if (name.length <= maxLen) return name
+  const ext = name.lastIndexOf('.') > 0 ? name.slice(name.lastIndexOf('.')) : ''
+  const base = name.slice(0, name.length - ext.length)
+  const keep = maxLen - ext.length - 1
+  return keep > 0 ? base.slice(0, keep) + '…' + ext : name.slice(0, maxLen - 1) + '…'
+}
+
+function fileIcon(file) {
+  const t = file.type || ''
+  if (t.startsWith('image/')) return Image
+  if (t === 'application/pdf' || t.includes('word')) return FileText
+  if (t.includes('spreadsheet') || t.includes('csv') || t.includes('excel')) return FileSpreadsheet
+  if (t.includes('json') || t.includes('javascript') || t.includes('typescript') || t.includes('html') || t.includes('xml')) return FileCode
+  return File
+}
+
+function removeFile(index) {
+  attachedFiles.value.splice(index, 1)
+}
+
 watch(() => currentChat.value, (chat) => {
   if (chat) {
     chatTitle.value = chat.title || ''
@@ -219,21 +215,15 @@ watch(() => currentChat.value, (chat) => {
   }
 })
 
-// Persist model selection to localStorage
 watch(selectedModelId, (id) => {
-  if (id) {
-    localStorage.setItem('deltachat-selected-model', id)
-  } else {
-    localStorage.removeItem('deltachat-selected-model')
-  }
+  if (id) localStorage.setItem('deltachat-selected-model', id)
+  else localStorage.removeItem('deltachat-selected-model')
 })
 
-// Load messages when currentChatId changes
 watch(() => chatStore.currentChatId, async (id) => {
   if (id) await chatStore.loadMessages(id)
 })
 
-// Scroll to bottom on new messages
 watch(currentChatMessages, async () => {
   await nextTick()
   if (messagesContainer.value) {
@@ -241,20 +231,39 @@ watch(currentChatMessages, async () => {
   }
 }, { deep: true })
 
-async function sendMessage() {
-  if (!inputMessage.value.trim() || chatStore.streaming) return
-  const content = inputMessage.value.trim()
-  inputMessage.value = ''
+function autoResize() {
+  const el = textareaRef.value
+  if (el) {
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 150) + 'px'
+  }
+}
 
-  // Auto-create a new chat if none is selected; use first message as title
+async function sendMessage() {
+  if (!canSend.value) return
+  const text = inputMessage.value.trim()
+  const files = [...attachedFiles.value]
+
+  // Build content: text + attachment references
+  let content = text
+  if (files.length) {
+    const attachmentLines = files.map(f => `[Attached: ${f.name}]`).join('\n')
+    content = content ? `${content}\n\n${attachmentLines}` : attachmentLines
+  }
+
+  inputMessage.value = ''
+  attachedFiles.value = []
+  if (textareaRef.value) textareaRef.value.style.height = 'auto'
+
   let chatId = chatStore.currentChatId
   if (!chatId) {
-    const autoTitle = content.length > 50 ? content.slice(0, 50) + '…' : content
+    const autoTitle = text
+      ? (text.length > 50 ? text.slice(0, 50) + '…' : text)
+      : files.map(f => f.name).join(', ').slice(0, 50)
     const chat = await chatStore.createChat(autoTitle, selectedModelId.value, null)
     chatId = chat.id
     chatStore.currentChatId = chatId
   }
-
   chatStore.streamMessage(chatId, content, { modelId: selectedModelId.value })
 }
 
@@ -277,205 +286,12 @@ function cancelEditTitle() {
 }
 
 function handleFileAttach(e) {
-  const file = e.target.files[0]
-  if (file) inputMessage.value += ` [Attached: ${file.name}]`
+  for (const file of e.target.files) {
+    attachedFiles.value.push(file)
+  }
+  // Reset the input so the same file can be re-attached
+  e.target.value = ''
 }
 
-onMounted(async () => {
-  await modelsStore.loadModels()
-})
+onMounted(() => modelsStore.loadModels())
 </script>
-
-<style scoped>
-.chat-layout {
-  --app-bar-height: 48px;
-  display: flex;
-  height: calc(100vh - var(--app-bar-height));
-  overflow: hidden;
-}
-
-.chat-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.chat-toolbar {
-  flex-shrink: 0;
-}
-
-.chat-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px 24px 16px;
-  display: flex;
-  flex-direction: column;
-}
-
-.welcome-screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 32px 16px;
-  position: relative;
-}
-
-.welcome-glow {
-  position: absolute;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(124, 77, 255, 0.15) 0%, rgba(124, 77, 255, 0.05) 40%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -55%);
-  animation: pulseGlow 4s ease-in-out infinite;
-}
-
-.welcome-glow-secondary {
-  position: absolute;
-  width: 350px;
-  height: 350px;
-  background: radial-gradient(circle, rgba(3, 218, 198, 0.08) 0%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-  top: 45%;
-  left: 55%;
-  transform: translate(-50%, -50%);
-  animation: pulseGlow 5s ease-in-out infinite reverse;
-}
-
-.welcome-avatar-container {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  animation: float 4s ease-in-out infinite;
-}
-
-.welcome-avatar {
-  box-shadow: 0 8px 32px rgba(124, 77, 255, 0.35), 0 0 0 1px rgba(124, 77, 255, 0.15);
-  z-index: 1;
-}
-
-.welcome-avatar-ring {
-  position: absolute;
-  top: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 104px;
-  height: 104px;
-  border-radius: 20px;
-  border: 2px solid rgba(124, 77, 255, 0.15);
-  animation: pulseGlow 3s ease-in-out infinite;
-  pointer-events: none;
-}
-
-.quick-actions {
-  animation: fadeInUp 0.6s ease-out 0.3s both;
-}
-
-.quick-action-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px 24px;
-  border-radius: 16px;
-  border: 1px solid rgba(var(--v-border-color), 0.1);
-  background: rgba(var(--v-theme-surface-variant), 0.3);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  min-width: 160px;
-  backdrop-filter: blur(8px);
-}
-
-.quick-action-card:hover {
-  background: rgba(var(--v-theme-surface-variant), 0.6);
-  border-color: rgba(124, 77, 255, 0.25);
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(124, 77, 255, 0.12);
-}
-
-.v-theme--light .quick-action-card {
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.v-theme--light .quick-action-card:hover {
-  background: white;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-}
-
-/* Input area */
-.chat-input-wrapper {
-  flex-shrink: 0;
-  border-top: 1px solid rgba(var(--v-border-color), 0.06);
-  background: linear-gradient(to top, rgb(var(--v-theme-surface)) 60%, rgba(var(--v-theme-surface), 0.9));
-  backdrop-filter: blur(12px);
-  padding: 12px 16px 20px;
-}
-
-.chat-input {
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.chat-input-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(var(--v-theme-surface-variant), 0.4);
-  border-radius: 20px;
-  padding: 8px 12px 8px 8px;
-  border: 1px solid rgba(var(--v-border-color), 0.08);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-}
-
-.chat-input-box:focus-within {
-  border-color: rgba(124, 77, 255, 0.35);
-  box-shadow: 0 4px 20px rgba(124, 77, 255, 0.1), 0 2px 12px rgba(0, 0, 0, 0.08);
-  background: rgba(var(--v-theme-surface-variant), 0.6);
-}
-
-.chat-textarea {
-  flex: 1;
-  min-height: 0;
-}
-
-.chat-textarea :deep(.v-field__outline) {
-  display: none;
-}
-
-.chat-textarea :deep(.v-field) {
-  background: transparent;
-  padding-top: 4px;
-  padding-bottom: 4px;
-  min-height: 36px;
-}
-
-.chat-textarea :deep(.v-field__field) {
-  align-items: center;
-}
-
-.chat-textarea :deep(textarea) {
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-}
-
-.chat-input-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.model-select :deep(.v-field) {
-  border-radius: 10px;
-}
-</style>

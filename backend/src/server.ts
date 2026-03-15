@@ -54,8 +54,8 @@ io.on('connection', (socket) => {
         onChunk(chunk) {
           socket.emit('chat:chunk', { chatId, chunk });
         },
-        onDone(_fullContent, message) {
-          socket.emit('chat:done', { chatId, message });
+        onDone(_fullContent, message, sources) {
+          socket.emit('chat:done', { chatId, message, sources });
           webhookService
             .notify('message.created', chatId, { message })
             .catch(() => {});
@@ -73,13 +73,26 @@ io.on('connection', (socket) => {
   });
 });
 
+import { getAdapter } from './db/DeltaDatabaseAdapter';
+
 // ── Start ──────────────────────────────────────────────────────────────────
 
-server.listen(config.port, () => {
-  console.log(`✅  DeltaChat backend running on port ${config.port} (${config.nodeEnv})`);
-  console.log(`   Health:  http://localhost:${config.port}/health`);
-  console.log(`   API:     http://localhost:${config.port}/api`);
-});
+(async () => {
+  try {
+    const adapter = getAdapter();
+    await adapter._backend.initSchemas();
+    console.log('[DeltaDB] All schemas registered successfully');
+  } catch (err) {
+    console.error('[DeltaDB] Failed to register schemas:', err);
+    process.exit(1);
+  }
+
+  server.listen(config.port, () => {
+    console.log(`✅  DeltaChat backend running on port ${config.port} (${config.nodeEnv})`);
+    console.log(`   Health:  http://localhost:${config.port}/health`);
+    console.log(`   API:     http://localhost:${config.port}/api`);
+  });
+})();
 
 process.on('SIGTERM', () => {
   console.log('[Server] SIGTERM received – shutting down gracefully');
