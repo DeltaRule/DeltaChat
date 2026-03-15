@@ -1,8 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import axios from 'axios'
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+import api from '../lib/api'
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref({})
@@ -10,31 +8,31 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function loadSettings() {
     try {
-      const { data } = await axios.get(`${API}/api/settings`)
+      const { data } = await api.get('/settings')
       settings.value = data
     } catch (e) { console.error(e) }
   }
 
   async function saveSettings(data) {
-    const res = await axios.put(`${API}/api/settings`, data)
+    const res = await api.put('/settings', data)
     settings.value = res.data
   }
 
   async function loadWebhooks() {
     try {
-      const { data } = await axios.get(`${API}/api/webhooks`)
+      const { data } = await api.get('/webhooks')
       webhooks.value = data
     } catch (e) { console.error(e) }
   }
 
   async function createWebhook(data) {
-    const res = await axios.post(`${API}/api/webhooks`, data)
+    const res = await api.post('/webhooks', data)
     webhooks.value.push(res.data)
     return res.data
   }
 
   async function deleteWebhook(id) {
-    await axios.delete(`${API}/api/webhooks/${id}`)
+    await api.delete(`/webhooks/${id}`)
     webhooks.value = webhooks.value.filter(w => w.id !== id)
   }
 

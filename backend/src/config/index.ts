@@ -30,6 +30,20 @@ const config = {
   binaryStorage: { path: process.env['BINARY_STORAGE_PATH'] ?? './data/binaries' },
   mcp: { serverUrl: process.env['MCP_SERVER_URL'] ?? '' },
   webhookSecret: process.env['WEBHOOK_SECRET'] ?? 'change-me-in-production',
+  jwt: {
+    secret: process.env['JWT_SECRET'] ?? 'deltachat-dev-secret-change-in-production',
+    expiresIn: process.env['JWT_EXPIRES_IN'] ?? '7d',
+  },
+  google: {
+    clientId: process.env['GOOGLE_CLIENT_ID'] ?? '',
+    clientSecret: process.env['GOOGLE_CLIENT_SECRET'] ?? '',
+  },
+  scim: {
+    apiToken: process.env['SCIM_API_TOKEN'] ?? '',
+  },
+  adminEmail: process.env['ADMIN_EMAIL'] ?? '',
+  logLevel: (process.env['LOG_LEVEL'] ?? 'info') as 'error' | 'warn' | 'info' | 'debug',
+  ragChunkTemplate: process.env['RAG_CHUNK_TEMPLATE'] ?? '\n\n---\nRelevant context from knowledge base:\n{chunks}',
   cors: {
     origins: (process.env['CORS_ORIGINS'] ?? 'http://localhost:3000,http://localhost:5173,http://localhost:5174')
       .split(',')

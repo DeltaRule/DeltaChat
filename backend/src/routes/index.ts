@@ -6,6 +6,8 @@ import KnowledgeService from '../services/KnowledgeService';
 import WebhookService from '../services/WebhookService';
 import McpService from '../services/McpService';
 
+import { requireAuth } from '../middleware/auth';
+import authRouter from './auth';
 import chatRouter from './chat';
 import knowledgeRouter from './knowledge';
 import webhooksRouter from './webhooks';
@@ -14,6 +16,9 @@ import mcpRouter from './mcp';
 import modelsRouter from './models';
 import agentsRouter from './agents';
 import toolsRouter from './tools';
+import usersRouter from './users';
+import userGroupsRouter from './user-groups';
+import sharingRouter from './sharing';
 
 const router = Router();
 
@@ -24,10 +29,17 @@ const mcpService = new McpService();
 
 chatService.setKnowledgeService(knowledgeService);
 
+// Service injection — available to all subsequent routes
 router.use((req: Request, _res: Response, next: NextFunction) => {
   req.services = { chatService, knowledgeService, webhookService, mcpService };
   next();
 });
+
+// ── Public routes (no auth required) ──────────────────────────────────────
+router.use('/auth', authRouter);
+
+// ── Protected routes (auth required) ──────────────────────────────────────
+router.use(requireAuth);
 
 router.use('/chats', chatRouter);
 router.use('/knowledge', knowledgeRouter);
@@ -38,6 +50,9 @@ router.use('/mcp', mcpRouter);
 router.use('/models', modelsRouter);
 router.use('/agents', agentsRouter);
 router.use('/tools', toolsRouter);
+router.use('/users', usersRouter);
+router.use('/user-groups', userGroupsRouter);
+router.use('/sharing', sharingRouter);
 
 // GET /api/providers
 router.get('/providers', async (_req: Request, res: Response, next: NextFunction) => {

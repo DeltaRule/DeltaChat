@@ -4,10 +4,18 @@ import { Router, Request, Response, NextFunction } from 'express';
 
 const router = Router();
 
+/** Return true if the authenticated user is allowed to access the chat. */
+function canAccessChat(chat: Record<string, unknown>, userId: string, userRole: string): boolean {
+  if (userRole === 'admin') return true;
+  if (!chat.ownerId) return false; // Legacy chats without owner → admin-only
+  return chat.ownerId === userId;
+}
+
 // POST /api/chats
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const chat = await req.services.chatService.createChat(req.body as Record<string, unknown>);
+    const body = { ...(req.body as Record<string, unknown>), ownerId: req.user!.id };
+    const chat = await req.services.chatService.createChat(body);
     res.status(201).json(chat);
   } catch (err) {
     next(err);
@@ -18,7 +26,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const chats = await req.services.chatService.listChats();
-    res.json(chats);
+    const filtered = chats.filter((c: any) =>
+      canAccessChat(c, req.user!.id, req.user!.role)
+    );
+    res.json(filtered);
   } catch (err) {
     next(err);
   }
@@ -28,6 +39,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const chat = await req.services.chatService.getChat(req.params.id as string);
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
+    if (!canAccessChat(chat as Record<string, unknown>, req.user!.id, req.user!.role)) {
+      return res.status(403).json({ error: 'You do not have access to this chat' });
+    }
     res.json(chat);
   } catch (err) {
     next(err);
@@ -37,6 +52,11 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
 // PATCH /api/chats/:id
 router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const existing = await req.services.chatService.getChat(req.params.id as string);
+    if (!existing) return res.status(404).json({ error: 'Chat not found' });
+    if (!canAccessChat(existing as Record<string, unknown>, req.user!.id, req.user!.role)) {
+      return res.status(403).json({ error: 'You do not have access to this chat' });
+    }
     const chat = await req.services.chatService.updateChat(req.params.id as string, req.body as Record<string, unknown>);
     res.json(chat);
   } catch (err) {
@@ -47,6 +67,11 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
 // DELETE /api/chats/:id
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const existing = await req.services.chatService.getChat(req.params.id as string);
+    if (!existing) return res.status(404).json({ error: 'Chat not found' });
+    if (!canAccessChat(existing as Record<string, unknown>, req.user!.id, req.user!.role)) {
+      return res.status(403).json({ error: 'You do not have access to this chat' });
+    }
     await req.services.chatService.deleteChat(req.params.id as string);
     res.json({ ok: true });
   } catch (err) {
@@ -62,6 +87,17 @@ router.post('/:id/messages', async (req: Request, res: Response, next: NextFunct
 
   if (!content) {
     return res.status(400).json({ error: 'content is required' });
+  }
+
+  // Verify ownership before allowing message creation
+  try {
+    const targetChat = await req.services.chatService.getChat(chatId);
+    if (!targetChat) return res.status(404).json({ error: 'Chat not found' });
+    if (!canAccessChat(targetChat as Record<string, unknown>, req.user!.id, req.user!.role)) {
+      return res.status(403).json({ error: 'You do not have access to this chat' });
+    }
+  } catch (err) {
+    return next(err);
   }
 
   const wantsStream =

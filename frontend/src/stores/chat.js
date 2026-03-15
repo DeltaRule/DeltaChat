@@ -1,10 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
-import axios from 'axios'
 import { io } from 'socket.io-client'
 import { useNotificationStore } from './notification'
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+import api, { API_URL } from '../lib/api'
 
 export const useChatStore = defineStore('chat', () => {
   const chats = ref([])
@@ -12,18 +10,29 @@ export const useChatStore = defineStore('chat', () => {
   const messages = reactive({})
   const streaming = ref(false)
   const streamError = ref(null)
-  const socket = io(API, { autoConnect: true })
+  const socket = io(API_URL, {
+    autoConnect: true,
+    auth: { token: localStorage.getItem('deltachat-token') || '' }
+  })
   let _streamTimeout = null
+
+  // Reconnect socket when token changes
+  function reconnectSocket() {
+    socket.auth = { token: localStorage.getItem('deltachat-token') || '' }
+    if (socket.connected) {
+      socket.disconnect().connect()
+    }
+  }
 
   async function loadChats() {
     try {
-      const { data } = await axios.get(`${API}/api/chats`)
+      const { data } = await api.get('/chats')
       chats.value = data
     } catch (e) { console.error(e) }
   }
 
   async function createChat(title, modelId, folder) {
-    const { data } = await axios.post(`${API}/api/chats`, {
+    const { data } = await api.post('/chats', {
       title: title || '',
       modelId: modelId || null,
       folder: folder || null,
@@ -33,14 +42,14 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function updateChat(id, fields) {
-    const { data } = await axios.patch(`${API}/api/chats/${id}`, fields)
+    const { data } = await api.patch(`/chats/${id}`, fields)
     const idx = chats.value.findIndex(c => c.id === id)
     if (idx !== -1) chats.value[idx] = data
     return data
   }
 
   async function deleteChat(id) {
-    await axios.delete(`${API}/api/chats/${id}`)
+    await api.delete(`/chats/${id}`)
     chats.value = chats.value.filter(c => c.id !== id)
     if (currentChatId.value === id) currentChatId.value = null
   }
@@ -49,7 +58,7 @@ export const useChatStore = defineStore('chat', () => {
     // Don't reload if we already have messages being streamed for this chat
     if (streaming.value && messages[chatId]?.length) return
     try {
-      const { data } = await axios.get(`${API}/api/chats/${chatId}`)
+      const { data } = await api.get(`/chats/${chatId}`)
       // Only replace if we're not currently streaming (streaming adds messages client-side)
       if (!streaming.value) {
         messages[chatId] = data.messages || []
@@ -61,7 +70,7 @@ export const useChatStore = defineStore('chat', () => {
     const userMsg = { role: 'user', content, id: Date.now() }
     if (!messages[chatId]) messages[chatId] = []
     messages[chatId].push(userMsg)
-    const { data } = await axios.post(`${API}/api/chats/${chatId}/messages`, { content, ...opts })
+    const { data } = await api.post(`/chats/${chatId}/messages`, { content, ...opts })
     messages[chatId].push(data)
     return data
   }
@@ -148,5 +157,5 @@ export const useChatStore = defineStore('chat', () => {
     }, 60000)
   }
 
-  return { chats, currentChatId, messages, streaming, streamError, loadChats, createChat, updateChat, deleteChat, loadMessages, sendMessage, streamMessage, stopStreaming }
+  return { chats, currentChatId, messages, streaming, streamError, loadChats, createChat, updateChat, deleteChat, loadMessages, sendMessage, streamMessage, stopStreaming, reconnectSocket }
 })

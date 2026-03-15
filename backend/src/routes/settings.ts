@@ -3,6 +3,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { getAdapter } from '../db/DeltaDatabaseAdapter';
 import { clearProviderCache } from '../services/ChatService';
+import { requireAdmin } from '../middleware/auth';
 
 const router = Router();
 
@@ -17,8 +18,8 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// PUT /api/settings
-router.put('/', async (req: Request, res: Response, next: NextFunction) => {
+// PUT /api/settings — admin only
+router.put('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getAdapter();
     const settings = await db.updateSettings(req.body as Record<string, unknown>);

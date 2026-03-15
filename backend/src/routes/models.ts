@@ -3,15 +3,18 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { getAdapter } from '../db/DeltaDatabaseAdapter';
+import { getSharingService } from '../services/SharingService';
 
 const router = Router();
 
 // GET /api/models
-router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getAdapter();
     const models = await db.listAiModels();
-    res.json(models);
+    const sharingService = getSharingService();
+    const filtered = await sharingService.filterAccessible(req.user!.id, req.user!.role, 'ai_model', models);
+    res.json(filtered);
   } catch (err) {
     next(err);
   }
@@ -37,6 +40,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       webhookId: body['webhookId'] ?? null,
       agentId: body['agentId'] ?? null,
       enabled: body['enabled'] !== false,
+      ownerId: req.user!.id,
     });
     res.status(201).json(model);
   } catch (err) {
@@ -60,9 +64,13 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getAdapter();
-    const model = await db.updateAiModel(req.params.id as string, req.body as Record<string, unknown>);
+    const model = await db.getAiModel(req.params.id as string);
     if (!model) return res.status(404).json({ error: 'Model not found' });
-    res.json(model);
+    if (model['ownerId'] && model['ownerId'] !== req.user!.id && req.user!.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the owner or an admin can edit this model' });
+    }
+    const updated = await db.updateAiModel(req.params.id as string, req.body as Record<string, unknown>);
+    res.json(updated);
   } catch (err) {
     next(err);
   }
@@ -72,6 +80,11 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getAdapter();
+    const model = await db.getAiModel(req.params.id as string);
+    if (!model) return res.status(404).json({ error: 'Model not found' });
+    if (model['ownerId'] && model['ownerId'] !== req.user!.id && req.user!.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the owner or an admin can delete this model' });
+    }
     await db.deleteAiModel(req.params.id as string);
     res.json({ ok: true });
   } catch (err) {

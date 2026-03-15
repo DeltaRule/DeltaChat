@@ -3,6 +3,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 import config from '../config';
+import logger from '../logger';
 import { validate, SCHEMAS, toJsonSchema } from './schema';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -143,7 +144,7 @@ export class DeltaDatabaseClient {
       const jsonSchema = toJsonSchema(collection, schemaId);
       if (jsonSchema) {
         await this.putSchema(schemaId, jsonSchema);
-        console.log(`[DeltaDB] Registered schema: ${schemaId}`);
+        logger.debug(`[DeltaDB] Registered schema: ${schemaId}`);
       }
     }
   }
@@ -304,7 +305,7 @@ export class DeltaDatabaseAdapter {
       config.deltaDb.adminKey,
       config.deltaDb.database
     );
-    console.log(
+    logger.info(
       `[DeltaDB] Using DeltaDatabase at ${config.deltaDb.url}` +
       ` (prefix: "${config.deltaDb.database}", auth: Bearer <admin-key>)`
     );
@@ -393,6 +394,67 @@ export class DeltaDatabaseAdapter {
     const existing = await this._backend.findById('settings', 'global');
     if (existing) return this._backend.update('settings', 'global', fields);
     return this._backend.insert('settings', { id: 'global', ...fields });
+  }
+
+  // Users
+  createUser(doc: Record<string, unknown>): Promise<Entity> { return this._backend.insert('users', doc); }
+  listUsers(): Promise<Entity[]> { return this._backend.findAll('users'); }
+  getUserById(id: string): Promise<Entity | null> { return this._backend.findById('users', id); }
+  updateUser(id: string, fields: Record<string, unknown>): Promise<Entity | null> { return this._backend.update('users', id, fields); }
+  deleteUser(id: string): Promise<DeleteResult> { return this._backend.delete('users', id); }
+
+  async getUserByEmail(email: string): Promise<Entity | null> {
+    const all = await this._backend.findAll('users');
+    return all.find((u) => (u['email'] as string)?.toLowerCase() === email.toLowerCase()) ?? null;
+  }
+
+  async getUserByGoogleId(googleId: string): Promise<Entity | null> {
+    const all = await this._backend.findAll('users');
+    return all.find((u) => u['googleId'] === googleId) ?? null;
+  }
+
+  // User Groups
+  createUserGroup(doc: Record<string, unknown>): Promise<Entity> { return this._backend.insert('user_groups', doc); }
+  listUserGroups(): Promise<Entity[]> { return this._backend.findAll('user_groups'); }
+  getUserGroup(id: string): Promise<Entity | null> { return this._backend.findById('user_groups', id); }
+  updateUserGroup(id: string, fields: Record<string, unknown>): Promise<Entity | null> { return this._backend.update('user_groups', id, fields); }
+  deleteUserGroup(id: string): Promise<DeleteResult> { return this._backend.delete('user_groups', id); }
+
+  async getUserGroupsForUser(userId: string): Promise<Entity[]> {
+    const all = await this._backend.findAll('user_groups');
+    return all.filter((g) => {
+      const members = g['memberIds'] as string[] | undefined;
+      return members?.includes(userId);
+    });
+  }
+
+  // Resource Shares
+  createResourceShare(doc: Record<string, unknown>): Promise<Entity> {
+    return this._backend.insert('resource_shares', doc, ['resourceId', 'targetId']);
+  }
+  listResourceShares(): Promise<Entity[]> { return this._backend.findAll('resource_shares'); }
+
+  async getResourceSharesForTarget(targetType: string, targetId: string): Promise<Entity[]> {
+    const all = await this._backend.findAll('resource_shares');
+    return all.filter((s) => s['targetType'] === targetType && s['targetId'] === targetId);
+  }
+
+  async getResourceSharesForResource(resourceType: string, resourceId: string): Promise<Entity[]> {
+    const all = await this._backend.findAll('resource_shares');
+    return all.filter((s) => s['resourceType'] === resourceType && s['resourceId'] === resourceId);
+  }
+
+  async deleteResourceShare(id: string): Promise<DeleteResult> {
+    const share = await this._backend.findById('resource_shares', id);
+    return this._backend.delete('resource_shares', id, share ? [
+      { field: 'resourceId', value: share['resourceId'] },
+      { field: 'targetId', value: share['targetId'] },
+    ] : []);
+  }
+
+  async deleteResourceSharesByTarget(targetType: string, targetId: string): Promise<void> {
+    const shares = await this.getResourceSharesForTarget(targetType, targetId);
+    for (const s of shares) await this.deleteResourceShare(s.id);
   }
 }
 

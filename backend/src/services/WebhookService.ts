@@ -3,6 +3,7 @@
 import { randomUUID } from 'crypto';
 import axios from 'axios';
 import { getAdapter, DeltaDatabaseAdapter, Entity } from '../db/DeltaDatabaseAdapter';
+import logger from '../logger';
 
 interface AppError extends Error {
   status?: number;
@@ -79,7 +80,7 @@ class WebhookService {
     try {
       webhooks = await this._db.listWebhooks();
     } catch (err) {
-      console.error('[WebhookService] Failed to load webhooks:', (err as Error).message);
+      logger.error('[WebhookService] Failed to load webhooks:', (err as Error).message);
       return;
     }
 
@@ -121,7 +122,7 @@ class WebhookService {
     try {
       await axios.post(webhook.url, body, { headers, timeout: 10000 });
     } catch (err) {
-      console.error(
+      logger.error(
         `[WebhookService] Delivery failed for webhook ${webhook.id} (${webhook.url}):`,
         (err as Error).message
       );

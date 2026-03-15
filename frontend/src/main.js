@@ -5,5 +5,13 @@ import router from './router'
 import App from './App.vue'
 
 const pinia = createPinia()
+const app = createApp(App)
+app.use(pinia)
+app.use(router)
 
-createApp(App).use(pinia).use(router).mount('#app')
+// Restore auth session from localStorage before mounting
+import { useAuthStore } from './stores/auth'
+const authStore = useAuthStore()
+authStore.loadFromStorage()
+
+app.mount('#app')

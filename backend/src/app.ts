@@ -7,7 +7,9 @@ import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
 import config from './config';
+import logger from './logger';
 import apiRouter from './routes';
+import scimRouter from './routes/scim';
 
 interface AppError extends Error {
   status?: number;
@@ -52,6 +54,10 @@ app.get('/health', (_req: Request, res: Response) => {
 
 app.use('/api', apiRouter);
 
+// ── SCIM 2.0 provisioning (RFC 7644) ──────────────────────────────────────
+
+app.use('/scim/v2', scimRouter);
+
 // ── 404 handler ────────────────────────────────────────────────────────────
 
 app.use((req: Request, res: Response) => {
@@ -66,7 +72,7 @@ app.use((err: AppError, _req: Request, res: Response, _next: NextFunction) => {
   const message = err.message ?? 'Internal Server Error';
 
   if (status >= 500) {
-    console.error('[Error]', err);
+    logger.error('[Error]', err);
   }
 
   res.status(status).json({

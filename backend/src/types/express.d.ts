@@ -12,6 +12,12 @@ declare global {
         webhookService: WebhookService;
         mcpService: McpService;
       };
+      user?: {
+        id: string;
+        email: string;
+        name: string;
+        role: 'admin' | 'user';
+      };
     }
   }
 }

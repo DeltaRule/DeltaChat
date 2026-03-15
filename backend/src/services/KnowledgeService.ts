@@ -8,6 +8,7 @@ import type BinaryProcessorBase from '../modules/BinaryProcessor/BinaryProcessor
 import type BinaryStorageBase from '../modules/BinaryStorage/BinaryStorageBase';
 import { createVectorStore, VectorStoreConfig } from '../modules/VectorStore/VectorStoreFactory';
 import { createBinaryProcessor, BinaryProcessorConfig } from '../modules/BinaryProcessor/BinaryProcessorFactory';
+import logger from '../logger';
 
 interface AppError extends Error {
   status?: number;
@@ -96,6 +97,11 @@ class KnowledgeService {
     this._getStorage = opts.getBinaryStorage ?? getBinaryStorage;
   }
 
+  /** Expose binary storage for download routes */
+  getBinaryStorage(): BinaryStorageBase {
+    return this._getStorage();
+  }
+
   // ── Config resolution helpers ──────────────────────────────────────────────
 
   private async _getGlobalSettings(): Promise<Entity> {
@@ -152,7 +158,7 @@ class KnowledgeService {
       const vs = await this._resolveVectorStore(ks);
       await vs.createCollection(ks.id);
     } catch (err) {
-      console.error('[KnowledgeService] Could not create vector collection:', (err as Error).message);
+      logger.error('[KnowledgeService] Could not create vector collection:', (err as Error).message);
     }
 
     return ks;
@@ -212,7 +218,7 @@ class KnowledgeService {
       extractedText = result.text ?? '';
       processorMeta = result.metadata ?? {};
     } catch (err) {
-      console.error('[KnowledgeService] Text extraction failed:', (err as Error).message);
+      logger.error('[KnowledgeService] Text extraction failed:', (err as Error).message);
       extractedText = '';
     }
 
@@ -228,7 +234,7 @@ class KnowledgeService {
     });
 
     this._indexDocument(ks, docId, extractedText).catch((err: Error) => {
-      console.error(`[KnowledgeService] Indexing failed for doc ${docId}:`, err.message);
+      logger.error(`[KnowledgeService] Indexing failed for doc ${docId}:`, err.message);
       this._db.updateDocument(docId, { status: 'error', errorMessage: err.message });
     });
 
@@ -283,7 +289,7 @@ class KnowledgeService {
           allResults.push({ ...r, storeId });
         }
       } catch (err) {
-        console.error(`[KnowledgeService] Vector query failed for store ${storeId}:`, (err as Error).message);
+        logger.error(`[KnowledgeService] Vector query failed for store ${storeId}:`, (err as Error).message);
       }
     }
 
@@ -356,7 +362,7 @@ class KnowledgeService {
         await vs.delete(`${docId}::${i}`);
       }
     } catch (err) {
-      console.error('[KnowledgeService] Failed to delete vectors:', (err as Error).message);
+      logger.error('[KnowledgeService] Failed to delete vectors:', (err as Error).message);
     }
   }
 }

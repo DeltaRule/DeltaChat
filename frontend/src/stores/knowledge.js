@@ -1,9 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import axios from 'axios'
+import api from '../lib/api'
 import { useNotificationStore } from './notification'
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export const useKnowledgeStore = defineStore('knowledge', () => {
   const knowledgeStores = ref([])
@@ -16,7 +14,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function loadKnowledgeStores() {
     try {
-      const { data } = await axios.get(`${API}/api/knowledge`)
+      const { data } = await api.get('/knowledge')
       knowledgeStores.value = data
     } catch (e) {
       console.error(e)
@@ -26,7 +24,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function createKnowledgeStore(name, description, opts = {}) {
     try {
-      const { data } = await axios.post(`${API}/api/knowledge`, {
+      const { data } = await api.post('/knowledge', {
         name, description,
         embeddingModelId: opts.embeddingModelId || null,
         vectorStoreConfig: opts.vectorStoreConfig || null,
@@ -47,7 +45,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   async function deleteKnowledgeStore(id) {
     try {
       _stopPolling(id)
-      await axios.delete(`${API}/api/knowledge/${id}`)
+      await api.delete(`/knowledge/${id}`)
       knowledgeStores.value = knowledgeStores.value.filter(k => k.id !== id)
     } catch (e) {
       console.error(e)
@@ -58,7 +56,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function loadDocuments(ksId) {
     try {
-      const { data } = await axios.get(`${API}/api/knowledge/${ksId}/documents`)
+      const { data } = await api.get(`/knowledge/${ksId}/documents`)
       documents.value[ksId] = data
       // Check if any documents are still processing and start/stop polling accordingly
       const hasProcessing = data.some(d => d.status === 'processing')
@@ -74,7 +72,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     try {
       const form = new FormData()
       form.append('file', file)
-      const { data } = await axios.post(`${API}/api/knowledge/${ksId}/documents`, form, {
+      const { data } = await api.post(`/knowledge/${ksId}/documents`, form, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
       if (!documents.value[ksId]) documents.value[ksId] = []
@@ -91,7 +89,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function deleteDocument(ksId, docId) {
     try {
-      await axios.delete(`${API}/api/knowledge/${ksId}/documents/${docId}`)
+      await api.delete(`/knowledge/${ksId}/documents/${docId}`)
       if (documents.value[ksId]) {
         documents.value[ksId] = documents.value[ksId].filter(d => d.id !== docId)
       }
@@ -106,7 +104,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     if (_pollTimers[ksId]) return // already polling
     _pollTimers[ksId] = setInterval(async () => {
       try {
-        const { data } = await axios.get(`${API}/api/knowledge/${ksId}/documents`)
+        const { data } = await api.get(`/knowledge/${ksId}/documents`)
         documents.value[ksId] = data
         const hasProcessing = data.some(d => d.status === 'processing')
         if (!hasProcessing) {

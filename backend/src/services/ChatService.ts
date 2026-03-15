@@ -8,6 +8,7 @@ import GeminiProvider from '../modules/ModelProvider/GeminiProvider';
 import OllamaProvider from '../modules/ModelProvider/OllamaProvider';
 import type KnowledgeService from './KnowledgeService';
 import config from '../config';
+import logger from '../logger';
 
 interface AppError extends Error {
   status?: number;
@@ -273,15 +274,25 @@ class ChatService {
     const sources: RagSource[] = [];
     if (this._knowledgeService && knowledgeStoreIds.length > 0) {
       try {
+        // Resolve topK from the embedding model of the first knowledge store
+        let topK = 5;
+        try {
+          const ks = await this._knowledgeService.getKnowledgeStore(knowledgeStoreIds[0]!);
+          const embeddingModelId = (ks['embeddingModelId'] as string | null);
+          if (embeddingModelId) {
+            const embModel = await this._db.getAiModel(embeddingModelId);
+            if (embModel?.['topK']) topK = embModel['topK'] as number;
+          }
+        } catch { /* use default */ }
+
         const results = await this._knowledgeService.retrieve(
           newUserContent,
           knowledgeStoreIds,
-          { topK: 5 }
+          { topK }
         );
         if (results.length > 0) {
-          ragContext =
-            '\n\n---\nRelevant context from knowledge base:\n' +
-            results.map((r, i) => `[${i + 1}] ${r.text}`).join('\n\n');
+          const chunksText = results.map((r, i) => `[${i + 1}] ${r.text}`).join('\n\n');
+          ragContext = config.ragChunkTemplate.replace('{chunks}', chunksText);
 
           // Resolve document filenames for source references
           for (const r of results) {
@@ -303,7 +314,7 @@ class ChatService {
           }
         }
       } catch (err) {
-        console.error('[ChatService] RAG retrieval failed:', (err as Error).message);
+        logger.error('[ChatService] RAG retrieval failed:', (err as Error).message);
       }
     }
 
@@ -313,7 +324,16 @@ class ChatService {
       systemPromptOverride ??
       (chat['systemPrompt'] as string | null | undefined) ??
       'You are a helpful AI assistant.';
-    messages.push({ role: 'system', content: systemPrompt + ragContext });
+
+    if (ragContext) {
+      messages.push({
+        role: 'system',
+        content: systemPrompt + ragContext +
+          '\n\nUse the above context to answer the user\'s question. Cite sources using [1], [2], etc. Do NOT repeat the context verbatim.',
+      });
+    } else {
+      messages.push({ role: 'system', content: systemPrompt });
+    }
 
     messages.push(...history);
 
@@ -331,7 +351,7 @@ class ChatService {
       try {
         return await buildProvider(providerName, this._db);
       } catch (err) {
-        console.error(`[ChatService] Failed to build provider "${providerName}":`, (err as Error).message);
+        logger.error(`[ChatService] Failed to build provider "${providerName}":`, (err as Error).message);
       }
     }
 

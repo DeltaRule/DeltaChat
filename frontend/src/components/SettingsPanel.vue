@@ -147,6 +147,7 @@
                   </div>
                   <Badge v-if="m.id === defaultModelId" variant="default" class="text-[10px]">Default</Badge>
                   <Badge :variant="m.enabled !== false ? 'success' : 'outline'">{{ m.enabled !== false ? 'Active' : 'Disabled' }}</Badge>
+                  <Button v-if="authStore.isAdmin" variant="ghost" size="icon-xs" @click.stop="openShareDialog('ai_model', m.id, m.name)"><Share2 class="h-3 w-3" /></Button>
                   <Button variant="ghost" size="icon-xs" @click.stop="openModelDialog(m)"><Pencil class="h-3 w-3" /></Button>
                   <Button variant="ghost" size="icon-xs" class="text-destructive" @click.stop="confirmDeleteModel(m)"><Trash2 class="h-3 w-3" /></Button>
                 </div>
@@ -174,22 +175,26 @@
                   :key="m.id"
                   class="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
                 >
-                  <Database class="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div class="flex-1 min-w-0">
-                    <div class="text-sm font-medium truncate">{{ m.name }}</div>
-                    <div class="text-xs text-muted-foreground">
-                      {{ m.provider || 'No provider' }}
-                      <span v-if="m.providerModel"> · {{ m.providerModel }}</span>
-                    </div>
-                  </div>
                   <Tooltip :delay-duration="200">
                     <TooltipTrigger as-child>
                       <Checkbox :checked="m.id === defaultEmbeddingModelId" @update:checked="toggleDefaultEmbedding(m.id)" />
                     </TooltipTrigger>
                     <TooltipContent>{{ m.id === defaultEmbeddingModelId ? 'Default embedding' : 'Set as default' }}</TooltipContent>
                   </Tooltip>
+                  <Database class="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium truncate">{{ m.name }}</div>
+                    <div class="text-xs text-muted-foreground">
+                      {{ m.provider || 'No provider' }}
+                      <span v-if="m.providerModel"> · {{ m.providerModel }}</span>
+                      <span v-if="m.chunkSize"> · {{ m.chunkSize }}cs</span>
+                      <span v-if="m.chunkOverlap"> / {{ m.chunkOverlap }}co</span>
+                      <span v-if="m.topK"> · top{{ m.topK }}</span>
+                    </div>
+                  </div>
                   <Badge v-if="m.id === defaultEmbeddingModelId" variant="default" class="text-[10px]">Default</Badge>
                   <Badge :variant="m.enabled !== false ? 'success' : 'outline'">{{ m.enabled !== false ? 'Active' : 'Disabled' }}</Badge>
+                  <Button v-if="authStore.isAdmin" variant="ghost" size="icon-xs" @click.stop="openShareDialog('ai_model', m.id, m.name)"><Share2 class="h-3 w-3" /></Button>
                   <Button variant="ghost" size="icon-xs" @click.stop="openModelDialog(m)"><Pencil class="h-3 w-3" /></Button>
                   <Button variant="ghost" size="icon-xs" class="text-destructive" @click.stop="confirmDeleteModel(m)"><Trash2 class="h-3 w-3" /></Button>
                 </div>
@@ -206,6 +211,12 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Card v-for="vs in vectorStoreProviders" :key="vs.key">
               <CardHeader class="!flex !flex-row !items-center gap-3 pb-3">
+                  <Tooltip :delay-duration="200">
+                    <TooltipTrigger as-child>
+                      <Checkbox :checked="defaultVectorStoreType === vs.key" @update:checked="toggleDefaultVectorStore(vs.key)" :disabled="!vectorStoreEnabled[vs.key]" />
+                    </TooltipTrigger>
+                    <TooltipContent>{{ defaultVectorStoreType === vs.key ? 'Default vector store' : 'Set as default' }}</TooltipContent>
+                  </Tooltip>
                   <div :class="['flex h-9 w-9 items-center justify-center rounded-lg shrink-0', vs.bgClass]">
                     <component :is="vs.icon" :class="['h-5 w-5', vs.iconClass]" />
                   </div>
@@ -213,6 +224,7 @@
                     <CardTitle class="text-sm">{{ vs.name }}</CardTitle>
                     <p class="text-xs text-muted-foreground truncate">{{ vs.description }}</p>
                   </div>
+                  <Badge v-if="defaultVectorStoreType === vs.key" variant="default" class="text-[10px] shrink-0">Default</Badge>
                   <Switch class="shrink-0" :model-value="vectorStoreEnabled[vs.key]" @update:model-value="vectorStoreEnabled[vs.key] = $event" />
               </CardHeader>
               <CardContent v-if="vectorStoreEnabled[vs.key] && vs.hasUrl" class="space-y-3">
@@ -224,21 +236,6 @@
               </CardContent>
             </Card>
           </div>
-
-          <Card class="mt-6">
-            <CardHeader class="pb-3">
-              <CardTitle class="text-sm">Default Vector Store</CardTitle>
-              <p class="text-xs text-muted-foreground">Used as default when creating new knowledge stores.</p>
-            </CardHeader>
-            <CardContent>
-              <Select v-model="defaultVectorStoreType">
-                <SelectTrigger><SelectValue placeholder="Select default…" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="vs in enabledVectorStores" :key="vs.key" :value="vs.key">{{ vs.name }}</SelectItem>
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
 
           <Button class="mt-6 shadow-lg shadow-primary/20" :disabled="saving" @click="saveVectorStoreSettings">
             <Save class="h-4 w-4 mr-2" />
@@ -254,6 +251,12 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Card v-for="dp in docProcessorProviders" :key="dp.key">
               <CardHeader class="!flex !flex-row !items-center gap-3 pb-3">
+                  <Tooltip :delay-duration="200">
+                    <TooltipTrigger as-child>
+                      <Checkbox :checked="defaultDocProcessorType === dp.key" @update:checked="toggleDefaultDocProcessor(dp.key)" :disabled="!docProcessorEnabled[dp.key]" />
+                    </TooltipTrigger>
+                    <TooltipContent>{{ defaultDocProcessorType === dp.key ? 'Default processor' : 'Set as default' }}</TooltipContent>
+                  </Tooltip>
                   <div :class="['flex h-9 w-9 items-center justify-center rounded-lg shrink-0', dp.bgClass]">
                     <component :is="dp.icon" :class="['h-5 w-5', dp.iconClass]" />
                   </div>
@@ -261,6 +264,7 @@
                     <CardTitle class="text-sm">{{ dp.name }}</CardTitle>
                     <p class="text-xs text-muted-foreground truncate">{{ dp.description }}</p>
                   </div>
+                  <Badge v-if="defaultDocProcessorType === dp.key" variant="default" class="text-[10px] shrink-0">Default</Badge>
                   <Switch class="shrink-0" :model-value="docProcessorEnabled[dp.key]" @update:model-value="docProcessorEnabled[dp.key] = $event" />
               </CardHeader>
               <CardContent v-if="docProcessorEnabled[dp.key] && dp.hasUrl" class="space-y-3">
@@ -272,21 +276,6 @@
               </CardContent>
             </Card>
           </div>
-
-          <Card class="mt-6">
-            <CardHeader class="pb-3">
-              <CardTitle class="text-sm">Default Document Processor</CardTitle>
-              <p class="text-xs text-muted-foreground">Used as default when creating new knowledge stores.</p>
-            </CardHeader>
-            <CardContent>
-              <Select v-model="defaultDocProcessorType">
-                <SelectTrigger><SelectValue placeholder="Select default…" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="dp in enabledDocProcessors" :key="dp.key" :value="dp.key">{{ dp.name }}</SelectItem>
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
 
           <Button class="mt-6 shadow-lg shadow-primary/20" :disabled="saving" @click="saveDocProcessorSettings">
             <Save class="h-4 w-4 mr-2" />
@@ -320,6 +309,7 @@
                       <div class="text-sm font-medium truncate">{{ ks.name }}</div>
                       <div class="text-xs text-muted-foreground">{{ ks.documentCount || 0 }} documents</div>
                     </div>
+                    <Button v-if="authStore.isAdmin" variant="ghost" size="icon-xs" @click.stop="openShareDialog('knowledge_store', ks.id, ks.name)"><Share2 class="h-3 w-3" /></Button>
                     <Button variant="ghost" size="icon-xs" class="text-destructive" @click.stop="knowledgeStore.deleteKnowledgeStore(ks.id)"><Trash2 class="h-3 w-3" /></Button>
                   </div>
                 </div>
@@ -394,6 +384,7 @@
                     <span v-if="agent.toolIds?.length"> · {{ agent.toolIds.length }} tools</span>
                   </div>
                 </div>
+                <Button v-if="authStore.isAdmin" variant="ghost" size="icon-xs" @click.stop="openShareDialog('agent', agent.id, agent.name)"><Share2 class="h-3 w-3" /></Button>
                 <Button variant="ghost" size="icon-xs" @click.stop="openAgentDialog(agent)"><Pencil class="h-3 w-3" /></Button>
                 <Button variant="ghost" size="icon-xs" class="text-destructive" @click.stop="agentsStore.deleteAgent(agent.id)"><Trash2 class="h-3 w-3" /></Button>
               </div>
@@ -428,6 +419,7 @@
                   </div>
                 </div>
                 <Badge :variant="tool.enabled !== false ? 'success' : 'outline'">{{ tool.enabled !== false ? 'Active' : 'Disabled' }}</Badge>
+                <Button v-if="authStore.isAdmin" variant="ghost" size="icon-xs" @click.stop="openShareDialog('tool', tool.id, tool.name)"><Share2 class="h-3 w-3" /></Button>
                 <Button variant="ghost" size="icon-xs" @click.stop="openToolDialog(tool)"><Pencil class="h-3 w-3" /></Button>
                 <Button variant="ghost" size="icon-xs" class="text-destructive" @click.stop="toolsStore.deleteTool(tool.id)"><Trash2 class="h-3 w-3" /></Button>
               </div>
@@ -521,6 +513,24 @@
               </Select>
             </div>
             <div><Label class="mb-1.5 block text-xs">Model Name</Label><Input v-model="modelForm.providerModel" :placeholder="modelForm.type === 'embedding' ? 'e.g. nomic-embed-text' : 'e.g. gpt-4o'" /></div>
+            <template v-if="modelForm.type === 'embedding'">
+              <Separator />
+              <p class="text-xs text-muted-foreground">Default chunking & retrieval settings for knowledge stores using this embedding model.</p>
+              <div class="grid grid-cols-3 gap-3">
+                <div>
+                  <Label class="mb-1.5 block text-xs">Chunk Size</Label>
+                  <Input v-model.number="modelForm.chunkSize" type="number" placeholder="1000" />
+                </div>
+                <div>
+                  <Label class="mb-1.5 block text-xs">Chunk Overlap</Label>
+                  <Input v-model.number="modelForm.chunkOverlap" type="number" placeholder="200" />
+                </div>
+                <div>
+                  <Label class="mb-1.5 block text-xs">Top K</Label>
+                  <Input v-model.number="modelForm.topK" type="number" placeholder="5" />
+                </div>
+              </div>
+            </template>
             <template v-if="modelForm.type === 'model'">
               <div><Label class="mb-1.5 block text-xs">System Prompt</Label><Textarea v-model="modelForm.systemPrompt" placeholder="System prompt…" rows="3" /></div>
               <div><Label class="mb-1.5 block text-xs">Temperature</Label><Input v-model="modelForm.temperature" type="number" placeholder="0.7" /></div>
@@ -740,6 +750,14 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- Share Dialog -->
+    <ShareDialog
+      v-model:open="shareDialogOpen"
+      :resource-type="shareTarget.type"
+      :resource-id="shareTarget.id"
+      :resource-label="shareTarget.label"
+    />
   </div>
 </template>
 
@@ -753,6 +771,8 @@ import { useToolsStore } from '../stores/tools'
 import { useKnowledgeStore } from '../stores/knowledge'
 import { useThemeStore } from '../stores/theme'
 import { useNotificationStore } from '../stores/notification'
+import { useAuthStore } from '../stores/auth'
+import ShareDialog from './ShareDialog.vue'
 import { Button } from './ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Input } from './ui/input'
@@ -769,10 +789,18 @@ import { Checkbox } from './ui/checkbox'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Key, Brain, Database, Bot, Wrench, Palette,
   Plus, Pencil, Trash2, Save, Upload, FileText, Webhook, Zap, Code, Link,
-  HardDrive, FileSearch
+  HardDrive, FileSearch, Share2
 } from 'lucide-vue-next'
 
 const settingsStore = useSettingsStore()
+const authStore = useAuthStore()
+
+const shareDialogOpen = ref(false)
+const shareTarget = ref({ type: '', id: '', label: '' })
+function openShareDialog(resourceType, resourceId, label) {
+  shareTarget.value = { type: resourceType, id: resourceId, label }
+  shareDialogOpen.value = true
+}
 const modelsStore = useModelsStore()
 const agentsStore = useAgentsStore()
 const toolsStore = useToolsStore()
@@ -871,6 +899,29 @@ const docProcessorUrls = reactive({ tika: '', docling: '' })
 const defaultDocProcessorType = ref('langchain')
 const enabledDocProcessors = computed(() => docProcessorProviders.filter(dp => docProcessorEnabled[dp.key]))
 
+// ── Knowledge store creation form defaults (must be declared before watcher) ──
+const newKsEmbeddingModelId = ref(null)
+const newKsVectorStoreType = ref('local')
+const newKsVectorStoreUrl = ref('')
+const newKsDocProcessorType = ref('langchain')
+const newKsDocProcessorUrl = ref('')
+const newKsChunkSize = ref(1000)
+const newKsChunkOverlap = ref(200)
+const newKsChunkUnit = ref('characters')
+
+function syncChunkFromEmbeddingModel(modelId) {
+  const model = embeddingModels.value.find(m => m.id === modelId)
+  if (model) {
+    newKsChunkSize.value = model.chunkSize ?? 1000
+    newKsChunkOverlap.value = model.chunkOverlap ?? 200
+    newKsChunkUnit.value = 'characters'
+  } else {
+    newKsChunkSize.value = 1000
+    newKsChunkOverlap.value = 200
+    newKsChunkUnit.value = 'characters'
+  }
+}
+
 watch(() => settingsStore.settings, (s) => {
   if (!s || !Object.keys(s).length) return
   providers.forEach(p => {
@@ -919,6 +970,7 @@ watch(() => settingsStore.settings, (s) => {
   newKsVectorStoreUrl.value = vectorStoreUrls[defaultVectorStoreType.value] || ''
   newKsDocProcessorType.value = defaultDocProcessorType.value || 'langchain'
   newKsDocProcessorUrl.value = docProcessorUrls[defaultDocProcessorType.value] || ''
+  syncChunkFromEmbeddingModel(newKsEmbeddingModelId.value)
 }, { immediate: true, deep: true })
 
 async function saveProviderSettings() {
@@ -952,6 +1004,14 @@ async function toggleDefaultModel(id) {
 async function toggleDefaultEmbedding(id) {
   defaultEmbeddingModelId.value = defaultEmbeddingModelId.value === id ? null : id
   await saveDefaults()
+}
+
+function toggleDefaultVectorStore(key) {
+  defaultVectorStoreType.value = defaultVectorStoreType.value === key ? null : key
+}
+
+function toggleDefaultDocProcessor(key) {
+  defaultDocProcessorType.value = defaultDocProcessorType.value === key ? null : key
 }
 
 function toggleModelKs(ksId) {
@@ -1001,7 +1061,7 @@ async function saveDocProcessorSettings() {
 // ── Model dialog ───────────────────────────────────
 const showModelDialog = ref(false)
 const editingModel = ref(null)
-const modelForm = reactive({ name: '', type: 'model', provider: null, providerModel: '', systemPrompt: '', temperature: 0.7, knowledgeStoreIds: [], toolIds: [], webhookId: null, agentId: null, enabled: true })
+const modelForm = reactive({ name: '', type: 'model', provider: null, providerModel: '', systemPrompt: '', temperature: 0.7, knowledgeStoreIds: [], toolIds: [], webhookId: null, agentId: null, enabled: true, chunkSize: 1000, chunkOverlap: 200, topK: 5 })
 const showDeleteModelDialog = ref(false)
 const deletingModel = ref(null)
 
@@ -1013,11 +1073,11 @@ const agentItems = computed(() => agentsStore.agents.map(a => ({ title: a.name, 
 function openModelDialog(model = null, defaultType = 'model') {
   editingModel.value = model
   if (model) {
-    Object.assign(modelForm, { name: model.name, type: model.type || 'model', provider: model.provider || null, providerModel: model.providerModel || '', systemPrompt: model.systemPrompt || '', temperature: model.temperature ?? 0.7, knowledgeStoreIds: model.knowledgeStoreIds || [], toolIds: model.toolIds || [], webhookId: model.webhookId || null, agentId: model.agentId || null, enabled: model.enabled !== false })
+    Object.assign(modelForm, { name: model.name, type: model.type || 'model', provider: model.provider || null, providerModel: model.providerModel || '', systemPrompt: model.systemPrompt || '', temperature: model.temperature ?? 0.7, knowledgeStoreIds: model.knowledgeStoreIds || [], toolIds: model.toolIds || [], webhookId: model.webhookId || null, agentId: model.agentId || null, enabled: model.enabled !== false, chunkSize: model.chunkSize ?? 1000, chunkOverlap: model.chunkOverlap ?? 200, topK: model.topK ?? 5 })
   } else {
     // Pre-fill provider with first enabled provider
     const firstProvider = defaultType === 'embedding' ? (embeddingProviderKeys.value.length ? embeddingProviderKeys.value[0] : null) : (providerKeys_list.value.length ? providerKeys_list.value[0] : null)
-    Object.assign(modelForm, { name: '', type: defaultType, provider: firstProvider, providerModel: '', systemPrompt: '', temperature: 0.7, knowledgeStoreIds: [], toolIds: [], webhookId: null, agentId: null, enabled: true })
+    Object.assign(modelForm, { name: '', type: defaultType, provider: firstProvider, providerModel: '', systemPrompt: '', temperature: 0.7, knowledgeStoreIds: [], toolIds: [], webhookId: null, agentId: null, enabled: true, chunkSize: 1000, chunkOverlap: 200, topK: 5 })
   }
   showModelDialog.value = true
 }
@@ -1083,14 +1143,9 @@ const selectedKs = ref(null)
 const showCreateKs = ref(false)
 const newKsName = ref('')
 const newKsDesc = ref('')
-const newKsEmbeddingModelId = ref(null)
-const newKsVectorStoreType = ref('local')
-const newKsVectorStoreUrl = ref('')
-const newKsDocProcessorType = ref('langchain')
-const newKsDocProcessorUrl = ref('')
-const newKsChunkSize = ref(1000)
-const newKsChunkOverlap = ref(100)
-const newKsChunkUnit = ref('characters')
+watch(newKsEmbeddingModelId, (modelId) => {
+  syncChunkFromEmbeddingModel(modelId)
+})
 const isDragging = ref(false)
 const docInput = ref(null)
 const ksDocs = computed(() => selectedKs.value ? (knowledgeStore.documents[selectedKs.value.id] || []) : [])

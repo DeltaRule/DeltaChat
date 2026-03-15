@@ -20,28 +20,22 @@
       </div>
       <div v-else class="markdown-body" v-html="renderedContent" />
 
-      <!-- RAG Sources -->
-      <div v-if="!isUser && sources.length > 0" class="mt-2 border-t border-border/50 pt-2">
-        <button
-          class="flex items-center gap-1 text-[0.7rem] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          @click="showSources = !showSources"
-        >
-          <FileText class="h-3 w-3" />
-          <span>{{ sources.length }} source{{ sources.length > 1 ? 's' : '' }}</span>
-          <ChevronDown :class="['h-3 w-3 transition-transform', showSources ? 'rotate-180' : '']" />
-        </button>
-        <div v-if="showSources" class="mt-1.5 space-y-1.5">
-          <div
-            v-for="(src, i) in sources"
-            :key="i"
-            class="text-[0.7rem] rounded-md bg-background/60 border border-border/40 px-2.5 py-1.5"
+      <!-- Sources -->
+      <div v-if="!isUser && uniqueSources.length" class="mt-2 pt-2 border-t border-border/50">
+        <div class="text-[0.65rem] text-muted-foreground/80 font-medium mb-1">Sources</div>
+        <div class="flex flex-wrap gap-1">
+          <a
+            v-for="(src, i) in uniqueSources"
+            :key="src.docId || src.chunkId || i"
+            :href="`${apiBase}/api/knowledge-stores/${src.storeId}/documents/${src.docId}/download`"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-1 text-[0.6rem] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer transition-colors no-underline"
+            :title="src.text"
           >
-            <div class="flex items-center justify-between gap-2 mb-0.5">
-              <span class="font-medium text-foreground/80 truncate">{{ src.filename || 'Unknown document' }}</span>
-              <span class="text-muted-foreground/60 shrink-0">{{ (src.score * 100).toFixed(0) }}%</span>
-            </div>
-            <p class="text-muted-foreground/70 line-clamp-2">{{ src.text }}</p>
-          </div>
+            <FileText class="h-3 w-3 shrink-0" />
+            [{{ i + 1 }}] {{ src.filename || 'Document' }}
+          </a>
         </div>
       </div>
 
@@ -58,17 +52,28 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { marked } from 'marked'
-import { Bot, User, Loader2, Paperclip, FileText, ChevronDown } from 'lucide-vue-next'
+import { Bot, User, Loader2, Paperclip, FileText } from 'lucide-vue-next'
+
+const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const props = defineProps({
   message: Object,
   isStreaming: { type: Boolean, default: false }
 })
 const isUser = computed(() => props.message.role === 'user')
-const sources = computed(() => props.message.sources || [])
-const showSources = ref(false)
+const uniqueSources = computed(() => {
+  const srcs = props.message.sources
+  if (!srcs?.length) return []
+  const seen = new Set()
+  return srcs.filter(s => {
+    const key = s.docId || s.chunkId
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+})
 const displayContent = computed(() => {
   const content = props.message.content || ''
   // Strip attachment markers like [Attached: filename.pdf] from display

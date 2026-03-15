@@ -3,6 +3,7 @@
 import axios, { AxiosInstance } from 'axios';
 import ModelProviderBase, { ChatMessage, ChatResult, ModelOptions } from './ModelProviderBase';
 import config from '../../config';
+import logger from '../../logger';
 
 interface OllamaProviderOpts {
   baseUrl?: string;
@@ -43,7 +44,7 @@ class OllamaProvider extends ModelProviderBase {
       const models = data?.models ?? [];
       return models.map((m: { name: string }) => m.name).sort();
     } catch (err) {
-      console.error('[OllamaProvider] Failed to list models:', (err as Error).message);
+      logger.warn('[OllamaProvider] Failed to list models:', (err as Error).message);
       return [];
     }
   }

@@ -2,6 +2,7 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
+import { getSharingService } from '../services/SharingService';
 
 const router = Router();
 
@@ -13,7 +14,8 @@ const upload = multer({
 // POST /api/knowledge-stores
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const ks = await req.services.knowledgeService.createKnowledgeStore(req.body as Record<string, unknown>);
+    const body = { ...(req.body as Record<string, unknown>), ownerId: req.user!.id };
+    const ks = await req.services.knowledgeService.createKnowledgeStore(body);
     res.status(201).json(ks);
   } catch (err) {
     next(err);
@@ -24,9 +26,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const stores = await req.services.knowledgeService.listKnowledgeStores();
+    const sharingService = getSharingService();
+    const accessible = await sharingService.filterAccessible(req.user!.id, req.user!.role, 'knowledge_store', stores);
     // Enrich each store with its document count
     const enriched = await Promise.all(
-      stores.map(async (ks) => {
+      accessible.map(async (ks) => {
         try {
           const docs = await req.services.knowledgeService.listDocuments(ks.id);
           return { ...ks, documentCount: docs.length };
@@ -79,6 +83,22 @@ router.get('/:id/documents', async (req: Request, res: Response, next: NextFunct
   try {
     const docs = await req.services.knowledgeService.listDocuments(req.params.id as string);
     res.json(docs);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/knowledge-stores/:id/documents/:docId/download
+router.get('/:id/documents/:docId/download', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const doc = await req.services.knowledgeService.getDocument(req.params.id as string, req.params.docId as string);
+    const storage = req.services.knowledgeService.getBinaryStorage();
+    const { buffer, metadata } = await storage.retrieve(req.params.docId as string);
+    const filename = (doc['filename'] as string) || 'document';
+    const mimeType = (metadata['mimeType'] as string) || (doc['mimeType'] as string) || 'application/octet-stream';
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.send(buffer);
   } catch (err) {
     next(err);
   }
