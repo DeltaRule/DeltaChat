@@ -1,16 +1,12 @@
-<script setup>
-import { reactiveOmit } from "@vueuse/core";
-import {
-  TooltipArrow,
-  TooltipContent,
-  TooltipPortal,
-  useForwardPropsEmits,
-} from "reka-ui";
-import { cn } from "@/lib/utils";
+<script setup lang="ts">
+import { reactiveOmit } from '@vueuse/core'
+import { TooltipArrow, TooltipContent, TooltipPortal, useForwardPropsEmits } from 'reka-ui'
+import type { PropType } from 'vue'
+import { cn } from '@/lib/utils'
 
 defineOptions({
   inheritAttrs: false,
-});
+})
 
 const props = defineProps({
   forceMount: { type: Boolean, required: false },
@@ -25,21 +21,21 @@ const props = defineProps({
   collisionBoundary: { type: null, required: false },
   collisionPadding: { type: [Number, Object], required: false },
   arrowPadding: { type: Number, required: false },
-  sticky: { type: String, required: false },
+  sticky: { type: String as PropType<'always' | 'partial'>, required: false },
   hideWhenDetached: { type: Boolean, required: false },
-  positionStrategy: { type: String, required: false },
-  updatePositionStrategy: { type: String, required: false },
+  positionStrategy: { type: String as PropType<'absolute' | 'fixed'>, required: false },
+  updatePositionStrategy: { type: String as PropType<'always' | 'optimized'>, required: false },
   class: {
     type: [Boolean, null, String, Object, Array],
     required: false,
     skipCheck: true,
   },
-});
+})
 
-const emits = defineEmits(["escapeKeyDown", "pointerDownOutside"]);
+const emits = defineEmits(['escapeKeyDown', 'pointerDownOutside'])
 
-const delegatedProps = reactiveOmit(props, "class");
-const forwarded = useForwardPropsEmits(delegatedProps, emits);
+const delegatedProps = reactiveOmit(props, 'class')
+const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>

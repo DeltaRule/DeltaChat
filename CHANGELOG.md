@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+
 - **Sidebar is now the single panel** – the navigation drawer (`AppNavigation.vue`) contains the full chat list (New Chat button, search, All/Saved filter, chat items with bookmark/delete actions, folder groups). The separate internal sidebar that was embedded inside `ChatInterface.vue` has been removed entirely.
 - **Welcome screen** – when no chat is active, the main area now shows a large Δ logo, a greeting heading, and a subtitle. Typing a message and pressing Enter automatically creates a new chat and sends the message without any dialog.
 - **`ai_models` collection** – named model configurations that users select when starting a chat. Each config stores display name, type (`model`|`webhook`|`agent`), provider, provider model, system prompt, temperature, max tokens, linked knowledge stores, and linked tools.
@@ -35,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Knowledge Stores removed from the main left navigation (it lives in Settings now).
 
 ### Changed
+
 - `App.vue` – `AppNavigation` (chat sidebar) is now **hidden on the `/settings` route**; the nav-icon is also hidden on settings, and the DeltaChat brand title is always shown in the app bar when on settings.
 - `ChatInterface.vue` – attachment button now sits **left of the send button** in a horizontal row (previously stacked vertically above the send button).
 - `SettingsPanel.vue` – settings left sidebar now supports collapsible rail mode matching the chat sidebar pattern: collapsed shows icons only (56 px) with a `›` chevron to expand; expanded shows icon + text (200 px) with a `‹` chevron to collapse; active tab is always highlighted.
@@ -50,6 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.1.0] – 2025-01-01 – Initial release
 
 ### Added
+
 - Real-time streaming chat via Socket.io and SSE.
 - Support for multiple AI providers: OpenAI, Google Gemini, Ollama, Webhook.
 - Knowledge Stores with RAG retrieval (ChromaDB vector store).

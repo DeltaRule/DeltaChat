@@ -1,8 +1,8 @@
-<script setup>
-import { reactiveOmit } from "@vueuse/core";
-import { ChevronDown } from "lucide-vue-next";
-import { SelectIcon, SelectTrigger, useForwardProps } from "reka-ui";
-import { cn } from "@/lib/utils";
+<script setup lang="ts">
+import { reactiveOmit } from '@vueuse/core'
+import { ChevronDown } from 'lucide-vue-next'
+import { SelectIcon, SelectTrigger, useForwardProps } from 'reka-ui'
+import { cn } from '@/lib/utils'
 
 const props = defineProps({
   disabled: { type: Boolean, required: false },
@@ -14,11 +14,11 @@ const props = defineProps({
     required: false,
     skipCheck: true,
   },
-  size: { type: String, required: false, default: "default" },
-});
+  size: { type: String, required: false, default: 'default' },
+})
 
-const delegatedProps = reactiveOmit(props, "class", "size");
-const forwardedProps = useForwardProps(delegatedProps);
+const delegatedProps = reactiveOmit(props, 'class', 'size')
+const forwardedProps = useForwardProps(delegatedProps)
 </script>
 
 <template>

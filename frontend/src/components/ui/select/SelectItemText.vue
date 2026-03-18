@@ -1,10 +1,10 @@
-<script setup>
-import { SelectItemText } from "reka-ui";
+<script setup lang="ts">
+import { SelectItemText } from 'reka-ui'
 
 const props = defineProps({
   asChild: { type: Boolean, required: false },
   as: { type: null, required: false },
-});
+})
 </script>
 
 <template>

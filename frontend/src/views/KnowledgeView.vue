@@ -1,6 +1,6 @@
 <template>
   <KnowledgeStores />
 </template>
-<script setup>
+<script setup lang="ts">
 import KnowledgeStores from '../components/KnowledgeStores.vue'
 </script>

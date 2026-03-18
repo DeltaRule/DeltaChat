@@ -1,21 +1,21 @@
-<script setup>
-import { reactiveOmit } from "@vueuse/core";
-import {
-  SelectContent,
-  SelectPortal,
-  SelectViewport,
-  useForwardPropsEmits,
-} from "reka-ui";
-import { cn } from "@/lib/utils";
-import { SelectScrollDownButton, SelectScrollUpButton } from ".";
+<script setup lang="ts">
+import { reactiveOmit } from '@vueuse/core'
+import { SelectContent, SelectPortal, SelectViewport, useForwardPropsEmits } from 'reka-ui'
+import type { PropType } from 'vue'
+import { cn } from '@/lib/utils'
+import { SelectScrollDownButton, SelectScrollUpButton } from '.'
 
 defineOptions({
   inheritAttrs: false,
-});
+})
 
 const props = defineProps({
   forceMount: { type: Boolean, required: false },
-  position: { type: String, required: false, default: "popper" },
+  position: {
+    type: String as PropType<'popper' | 'item-aligned'>,
+    required: false,
+    default: 'popper',
+  },
   bodyLock: { type: Boolean, required: false },
   side: { type: null, required: false },
   sideOffset: { type: Number, required: false },
@@ -28,10 +28,10 @@ const props = defineProps({
   collisionPadding: { type: [Number, Object], required: false },
   arrowPadding: { type: Number, required: false },
   hideShiftedArrow: { type: Boolean, required: false },
-  sticky: { type: String, required: false },
+  sticky: { type: String as PropType<'always' | 'partial'>, required: false },
   hideWhenDetached: { type: Boolean, required: false },
-  positionStrategy: { type: String, required: false },
-  updatePositionStrategy: { type: String, required: false },
+  positionStrategy: { type: String as PropType<'absolute' | 'fixed'>, required: false },
+  updatePositionStrategy: { type: String as PropType<'always' | 'optimized'>, required: false },
   disableUpdateOnLayoutShift: { type: Boolean, required: false },
   prioritizePosition: { type: Boolean, required: false },
   reference: { type: null, required: false },
@@ -43,16 +43,12 @@ const props = defineProps({
     required: false,
     skipCheck: true,
   },
-});
-const emits = defineEmits([
-  "closeAutoFocus",
-  "escapeKeyDown",
-  "pointerDownOutside",
-]);
+})
+const emits = defineEmits(['closeAutoFocus', 'escapeKeyDown', 'pointerDownOutside'])
 
-const delegatedProps = reactiveOmit(props, "class");
+const delegatedProps = reactiveOmit(props, 'class')
 
-const forwarded = useForwardPropsEmits(delegatedProps, emits);
+const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>

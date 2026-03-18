@@ -1,11 +1,11 @@
-<script setup>
-import { SelectValue } from "reka-ui";
+<script setup lang="ts">
+import { SelectValue } from 'reka-ui'
 
 const props = defineProps({
   placeholder: { type: String, required: false },
   asChild: { type: Boolean, required: false },
   as: { type: null, required: false },
-});
+})
 </script>
 
 <template>

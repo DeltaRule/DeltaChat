@@ -1,7 +1,7 @@
-<script setup>
-import { reactiveOmit } from "@vueuse/core";
-import { AvatarFallback } from "reka-ui";
-import { cn } from "@/lib/utils";
+<script setup lang="ts">
+import { reactiveOmit } from '@vueuse/core'
+import { AvatarFallback } from 'reka-ui'
+import { cn } from '@/lib/utils'
 
 const props = defineProps({
   delayMs: { type: Number, required: false },
@@ -12,21 +12,16 @@ const props = defineProps({
     required: false,
     skipCheck: true,
   },
-});
+})
 
-const delegatedProps = reactiveOmit(props, "class");
+const delegatedProps = reactiveOmit(props, 'class')
 </script>
 
 <template>
   <AvatarFallback
     data-slot="avatar-fallback"
     v-bind="delegatedProps"
-    :class="
-      cn(
-        'bg-muted flex size-full items-center justify-center rounded-full',
-        props.class,
-      )
-    "
+    :class="cn('bg-muted flex size-full items-center justify-center rounded-full', props.class)"
   >
     <slot />
   </AvatarFallback>

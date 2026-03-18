@@ -1,0 +1,48 @@
+repos:
+  # ------------------------
+  # General sanity checks
+  # ------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+
+  # ------------------------
+  # ESLint – Backend (TypeScript)
+  # ------------------------
+  - repo: local
+    hooks:
+      - id: eslint-backend
+        name: ESLint Backend
+        entry: npx --prefix backend eslint --fix
+        language: system
+        files: "^backend/.*\\.(ts|js)$"
+        exclude: "node_modules|dist"
+
+  # ------------------------
+  # ESLint – Frontend (Vue + TypeScript)
+  # ------------------------
+  - repo: local
+    hooks:
+      - id: eslint-frontend
+        name: ESLint Frontend
+        entry: npx --prefix frontend eslint --fix
+        language: system
+        files: "^frontend/.*\\.(ts|js|vue)$"
+        exclude: "node_modules|dist"
+
+  # ------------------------
+  # Prettier (JS/TS/Vue/CSS formatting – runs last)
+  # ------------------------
+  - repo: local
+    hooks:
+      - id: prettier
+        name: Prettier
+        entry: npx prettier --write --ignore-unknown
+        language: system
+        files: "\\.(js|ts|vue|json|css|scss|md)$"
+        exclude: "package-lock\\.json"

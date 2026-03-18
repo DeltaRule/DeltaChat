@@ -1,15 +1,12 @@
-<script setup>
-import { reactiveOmit } from "@vueuse/core";
-import {
-  DropdownMenuContent,
-  DropdownMenuPortal,
-  useForwardPropsEmits,
-} from "reka-ui";
-import { cn } from "@/lib/utils";
+<script setup lang="ts">
+import { reactiveOmit } from '@vueuse/core'
+import { DropdownMenuContent, DropdownMenuPortal, useForwardPropsEmits } from 'reka-ui'
+import type { PropType } from 'vue'
+import { cn } from '@/lib/utils'
 
 defineOptions({
   inheritAttrs: false,
-});
+})
 
 const props = defineProps({
   forceMount: { type: Boolean, required: false },
@@ -25,10 +22,10 @@ const props = defineProps({
   collisionPadding: { type: [Number, Object], required: false },
   arrowPadding: { type: Number, required: false },
   hideShiftedArrow: { type: Boolean, required: false },
-  sticky: { type: String, required: false },
+  sticky: { type: String as PropType<'always' | 'partial'>, required: false },
   hideWhenDetached: { type: Boolean, required: false },
-  positionStrategy: { type: String, required: false },
-  updatePositionStrategy: { type: String, required: false },
+  positionStrategy: { type: String as PropType<'absolute' | 'fixed'>, required: false },
+  updatePositionStrategy: { type: String as PropType<'always' | 'optimized'>, required: false },
   disableUpdateOnLayoutShift: { type: Boolean, required: false },
   prioritizePosition: { type: Boolean, required: false },
   reference: { type: null, required: false },
@@ -39,18 +36,18 @@ const props = defineProps({
     required: false,
     skipCheck: true,
   },
-});
+})
 const emits = defineEmits([
-  "escapeKeyDown",
-  "pointerDownOutside",
-  "focusOutside",
-  "interactOutside",
-  "closeAutoFocus",
-]);
+  'escapeKeyDown',
+  'pointerDownOutside',
+  'focusOutside',
+  'interactOutside',
+  'closeAutoFocus',
+])
 
-const delegatedProps = reactiveOmit(props, "class");
+const delegatedProps = reactiveOmit(props, 'class')
 
-const forwarded = useForwardPropsEmits(delegatedProps, emits);
+const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>

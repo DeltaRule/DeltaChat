@@ -1,12 +1,13 @@
-<script setup>
-import { reactiveOmit } from "@vueuse/core";
-import { ScrollAreaCorner, ScrollAreaRoot, ScrollAreaViewport } from "reka-ui";
-import { cn } from "@/lib/utils";
-import ScrollBar from "./ScrollBar.vue";
+<script setup lang="ts">
+import { reactiveOmit } from '@vueuse/core'
+import { ScrollAreaCorner, ScrollAreaRoot, ScrollAreaViewport } from 'reka-ui'
+import type { PropType } from 'vue'
+import { cn } from '@/lib/utils'
+import ScrollBar from './ScrollBar.vue'
 
 const props = defineProps({
-  type: { type: String, required: false },
-  dir: { type: String, required: false },
+  type: { type: String as PropType<'auto' | 'always' | 'scroll' | 'hover'>, required: false },
+  dir: { type: String as PropType<'ltr' | 'rtl'>, required: false },
   scrollHideDelay: { type: Number, required: false },
   asChild: { type: Boolean, required: false },
   as: { type: null, required: false },
@@ -15,9 +16,9 @@ const props = defineProps({
     required: false,
     skipCheck: true,
   },
-});
+})
 
-const delegatedProps = reactiveOmit(props, "class");
+const delegatedProps = reactiveOmit(props, 'class')
 </script>
 
 <template>

@@ -6,35 +6,41 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 
 ## Features
 
-| Feature | Description |
-|---|---|
-| 💬 Real-time Chat | Streaming responses via Socket.io and SSE |
-| 🧠 Multiple AI Providers | OpenAI, Google Gemini, Ollama, and more |
-| 🔗 Webhook Integration | Chat with any webhook (e.g. n8n workflows) instead of an AI model |
-| 📚 Knowledge Stores | Shared document repositories with RAG retrieval |
-| 🔌 MCP Support | Model Context Protocol client for tool use |
-| 🧩 Fully Modular | Swap any provider via plugin classes |
+| Feature                  | Description                                                       |
+| ------------------------ | ----------------------------------------------------------------- |
+| 💬 Real-time Chat        | Streaming responses via Socket.io and SSE                         |
+| 🧠 Multiple AI Providers | OpenAI, Google Gemini, Ollama, and more                           |
+| 🔗 Webhook Integration   | Chat with any webhook (e.g. n8n workflows) instead of an AI model |
+| 📚 Knowledge Stores      | Shared document repositories with RAG retrieval                   |
+| 🔌 MCP Support           | Model Context Protocol client for tool use                        |
+| 🧩 Fully Modular         | Swap any provider via plugin classes                              |
 
 ---
 
 ## Screenshots
 
 ### Chat View — collapsed sidebar (logo + `+` icon only)
+
 ![Chat](docs/screenshots/chat.png)
 
 ### Chat View — expanded sidebar (logo, New Chat button, search, chat list)
+
 ![Chat expanded](docs/screenshots/chat-expanded.png)
 
 ### Chat View — mobile
+
 ![Chat mobile](docs/screenshots/chat-mobile.png)
 
 ### Settings — expanded sidebar (icon + text, active highlight)
+
 ![Settings – providers](docs/screenshots/settings.png)
 
 ### Settings — collapsed sidebar (icons only with active indicator)
+
 ![Settings – collapsed](docs/screenshots/settings-collapsed.png)
 
 ### Settings — Models (named configurations users chat with)
+
 ![Settings – models](docs/screenshots/settings-models.png)
 
 ---
@@ -71,14 +77,14 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 Every module has an abstract base class and one or more concrete implementations.
 To add a new provider, extend the base class and register it in the service.
 
-| Module | Base class | Implementations |
-|---|---|---|
-| `ModelProvider` | `ModelProviderBase` | `OpenAIProvider`, `GeminiProvider`, `WebhookProvider` |
-| `EmbeddingProvider` | `EmbeddingProviderBase` | `OpenAIEmbedding`, `OllamaEmbedding` |
-| `BinaryProcessor` | `BinaryProcessorBase` | `TikaProcessor`, `DoclingProcessor` |
-| `BinaryStorage` | `BinaryStorageBase` | `LocalBinaryStorage` |
-| `VectorStore` | `VectorStoreBase` | `ChromaVectorStore` |
-| `FunctionExecutor` | `FunctionExecutorBase` | `LocalExecutor`, `DockerExecutor` |
+| Module              | Base class              | Implementations                                       |
+| ------------------- | ----------------------- | ----------------------------------------------------- |
+| `ModelProvider`     | `ModelProviderBase`     | `OpenAIProvider`, `GeminiProvider`, `WebhookProvider` |
+| `EmbeddingProvider` | `EmbeddingProviderBase` | `OpenAIEmbedding`, `OllamaEmbedding`                  |
+| `BinaryProcessor`   | `BinaryProcessorBase`   | `TikaProcessor`, `DoclingProcessor`                   |
+| `BinaryStorage`     | `BinaryStorageBase`     | `LocalBinaryStorage`                                  |
+| `VectorStore`       | `VectorStoreBase`       | `ChromaVectorStore`                                   |
+| `FunctionExecutor`  | `FunctionExecutorBase`  | `LocalExecutor`, `DockerExecutor`                     |
 
 ---
 
@@ -99,12 +105,12 @@ cp .env.example .env
 docker compose up -d
 ```
 
-| Service | URL |
-|---|---|
+| Service       | URL                   |
+| ------------- | --------------------- |
 | DeltaDatabase | http://localhost:8080 |
-| ChromaDB | http://localhost:8001 |
-| Backend API | http://localhost:3000 |
-| Frontend | http://localhost:80 |
+| ChromaDB      | http://localhost:8001 |
+| Backend API   | http://localhost:3000 |
+| Frontend      | http://localhost:80   |
 
 ### 3. Open the app
 
@@ -158,7 +164,7 @@ Open **http://localhost:5173**.
 
 ## DeltaDatabase Integration
 
-DeltaDatabase is the **only** primary data store (besides the vector store).  
+DeltaDatabase is the **only** primary data store (besides the vector store).
 It is a lightweight REST key-value service:
 
 ```
@@ -188,14 +194,14 @@ Since DeltaDatabase has no native list/delete/query, the adapter (`backend/src/d
 
 ### Collections
 
-| Collection | Key pattern | Secondary indexes |
-|---|---|---|
-| `chats` | `chats:{id}` | — |
-| `messages` | `messages:{id}` | `messages:_idx:chatId:{chatId}` |
-| `knowledge_stores` | `knowledge_stores:{id}` | — |
-| `documents` | `documents:{id}` | `documents:_idx:knowledgeStoreId:{id}` |
-| `webhooks` | `webhooks:{id}` | — |
-| `settings` | `settings:global` | — |
+| Collection         | Key pattern             | Secondary indexes                      |
+| ------------------ | ----------------------- | -------------------------------------- |
+| `chats`            | `chats:{id}`            | —                                      |
+| `messages`         | `messages:{id}`         | `messages:_idx:chatId:{chatId}`        |
+| `knowledge_stores` | `knowledge_stores:{id}` | —                                      |
+| `documents`        | `documents:{id}`        | `documents:_idx:knowledgeStoreId:{id}` |
+| `webhooks`         | `webhooks:{id}`         | —                                      |
+| `settings`         | `settings:global`       | —                                      |
 
 ---
 
@@ -207,17 +213,17 @@ The backend will POST the conversation to the webhook and use the response as th
 This enables integration with tools like **n8n**, **Make**, **Zapier**, or any custom HTTP endpoint.
 
 **Payload sent to the webhook:**
+
 ```json
 {
   "chatId": "abc123",
-  "messages": [
-    { "role": "user", "content": "Hello!" }
-  ],
+  "messages": [{ "role": "user", "content": "Hello!" }],
   "metadata": { "chatTitle": "My Chat" }
 }
 ```
 
 **Expected response:**
+
 ```json
 { "content": "Hello! How can I help?" }
 ```
@@ -226,7 +232,8 @@ This enables integration with tools like **n8n**, **Make**, **Zapier**, or any c
 
 ## MCP (Model Context Protocol)
 
-Configure an MCP server URL in Settings.  The backend MCP service:
+Configure an MCP server URL in Settings. The backend MCP service:
+
 - Connects to the MCP server
 - Lists available tools
 - Injects tool definitions into the system prompt / function-calling
@@ -237,72 +244,72 @@ Configure an MCP server URL in Settings.  The backend MCP service:
 
 ### Chat
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/chats` | List all chats |
-| POST | `/api/chats` | Create chat |
-| GET | `/api/chats/:id` | Get chat with messages |
-| DELETE | `/api/chats/:id` | Delete chat |
-| POST | `/api/chats/:id/messages` | Send message (streaming via SSE) |
+| Method | Endpoint                  | Description                      |
+| ------ | ------------------------- | -------------------------------- |
+| GET    | `/api/chats`              | List all chats                   |
+| POST   | `/api/chats`              | Create chat                      |
+| GET    | `/api/chats/:id`          | Get chat with messages           |
+| DELETE | `/api/chats/:id`          | Delete chat                      |
+| POST   | `/api/chats/:id/messages` | Send message (streaming via SSE) |
 
 ### Knowledge Stores
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/knowledge-stores` | List stores |
-| POST | `/api/knowledge-stores` | Create store |
-| DELETE | `/api/knowledge-stores/:id` | Delete store |
-| POST | `/api/knowledge-stores/:id/documents` | Upload document |
-| GET | `/api/knowledge-stores/:id/documents` | List documents |
+| Method | Endpoint                                     | Description     |
+| ------ | -------------------------------------------- | --------------- |
+| GET    | `/api/knowledge-stores`                      | List stores     |
+| POST   | `/api/knowledge-stores`                      | Create store    |
+| DELETE | `/api/knowledge-stores/:id`                  | Delete store    |
+| POST   | `/api/knowledge-stores/:id/documents`        | Upload document |
+| GET    | `/api/knowledge-stores/:id/documents`        | List documents  |
 | DELETE | `/api/knowledge-stores/:id/documents/:docId` | Delete document |
 
 ### Webhooks
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/webhooks` | List webhooks |
-| POST | `/api/webhooks` | Register webhook |
-| PUT | `/api/webhooks/:id` | Update webhook |
-| DELETE | `/api/webhooks/:id` | Delete webhook |
+| Method | Endpoint            | Description      |
+| ------ | ------------------- | ---------------- |
+| GET    | `/api/webhooks`     | List webhooks    |
+| POST   | `/api/webhooks`     | Register webhook |
+| PUT    | `/api/webhooks/:id` | Update webhook   |
+| DELETE | `/api/webhooks/:id` | Delete webhook   |
 
 ### Settings & Providers
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/settings` | Get settings |
-| PUT | `/api/settings` | Update settings |
-| GET | `/api/providers` | List available providers |
-| POST | `/api/mcp/tools` | List MCP tools |
-| POST | `/api/mcp/call` | Call MCP tool |
+| Method | Endpoint         | Description              |
+| ------ | ---------------- | ------------------------ |
+| GET    | `/api/settings`  | Get settings             |
+| PUT    | `/api/settings`  | Update settings          |
+| GET    | `/api/providers` | List available providers |
+| POST   | `/api/mcp/tools` | List MCP tools           |
+| POST   | `/api/mcp/call`  | Call MCP tool            |
 
 ### Models (named AI configurations)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/models` | List named model configs |
-| POST | `/api/models` | Create model config |
-| GET | `/api/models/:id` | Get model config |
-| PUT | `/api/models/:id` | Update model config |
-| DELETE | `/api/models/:id` | Delete model config |
+| Method | Endpoint          | Description              |
+| ------ | ----------------- | ------------------------ |
+| GET    | `/api/models`     | List named model configs |
+| POST   | `/api/models`     | Create model config      |
+| GET    | `/api/models/:id` | Get model config         |
+| PUT    | `/api/models/:id` | Update model config      |
+| DELETE | `/api/models/:id` | Delete model config      |
 
 ### Agents
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/agents` | List agents |
-| POST | `/api/agents` | Create agent |
-| GET | `/api/agents/:id` | Get agent |
-| PUT | `/api/agents/:id` | Update agent |
+| Method | Endpoint          | Description  |
+| ------ | ----------------- | ------------ |
+| GET    | `/api/agents`     | List agents  |
+| POST   | `/api/agents`     | Create agent |
+| GET    | `/api/agents/:id` | Get agent    |
+| PUT    | `/api/agents/:id` | Update agent |
 | DELETE | `/api/agents/:id` | Delete agent |
 
 ### Tools
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/tools` | List tools |
-| POST | `/api/tools` | Create tool |
-| GET | `/api/tools/:id` | Get tool |
-| PUT | `/api/tools/:id` | Update tool |
+| Method | Endpoint         | Description |
+| ------ | ---------------- | ----------- |
+| GET    | `/api/tools`     | List tools  |
+| POST   | `/api/tools`     | Create tool |
+| GET    | `/api/tools/:id` | Get tool    |
+| PUT    | `/api/tools/:id` | Update tool |
 | DELETE | `/api/tools/:id` | Delete tool |
 
 ---

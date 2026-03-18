@@ -11,8 +11,8 @@ value is the entity's JSON document:
 
 ```json
 {
-  "session_001": { "messages": [{"role":"user","content":"Hi"}] },
-  "session_002": { "messages": [{"role":"user","content":"Hello"}] }
+  "session_001": { "messages": [{ "role": "user", "content": "Hi" }] },
+  "session_002": { "messages": [{ "role": "user", "content": "Hello" }] }
 }
 ```
 
@@ -35,16 +35,16 @@ Retrieve a single entity.
 **Response** — the entity's JSON document directly:
 
 ```json
-{ "messages": [{"role":"user","content":"Hi"}] }
+{ "messages": [{ "role": "user", "content": "Hi" }] }
 ```
 
 **Error responses:**
 
-| HTTP code | Meaning |
-|-----------|---------|
-| `400` | Missing `key` query parameter or missing schema id |
-| `401` | Missing or invalid Bearer token |
-| `404` | Entity not found |
+| HTTP code | Meaning                                            |
+| --------- | -------------------------------------------------- |
+| `400`     | Missing `key` query parameter or missing schema id |
+| `401`     | Missing or invalid Bearer token                    |
+| `404`     | Entity not found                                   |
 
 ---
 
@@ -64,11 +64,11 @@ Delete a single entity by key from a schema-database. Requires `write` permissio
 
 **Error responses:**
 
-| HTTP code | Meaning |
-|-----------|---------|
-| `400` | Missing `key` query parameter or missing schema id |
-| `401` | Missing or invalid Bearer token |
-| `403` | Token lacks `write` permission |
+| HTTP code | Meaning                                            |
+| --------- | -------------------------------------------------- |
+| `400`     | Missing `key` query parameter or missing schema id |
+| `401`     | Missing or invalid Bearer token                    |
+| `403`     | Token lacks `write` permission                     |
 
 ---
 
@@ -104,9 +104,9 @@ Retrieve the JSON Schema document for a schema ID. No authentication required.
 
 **Error responses:**
 
-| HTTP code | Meaning |
-|-----------|---------|
-| `404` | Schema not found |
+| HTTP code | Meaning          |
+| --------- | ---------------- |
+| `404`     | Schema not found |
 
 ---
 
@@ -137,10 +137,10 @@ Create or replace a JSON Schema. Authentication required.
 
 **Error responses:**
 
-| HTTP code | Meaning |
-|-----------|---------|
-| `400` | Invalid JSON or invalid JSON Schema |
-| `401` | Missing or invalid Bearer token |
+| HTTP code | Meaning                             |
+| --------- | ----------------------------------- |
+| `400`     | Invalid JSON or invalid JSON Schema |
+| `401`     | Missing or invalid Bearer token     |
 
 ---
 
@@ -165,7 +165,7 @@ Create `./shared/db/templates/chat.v1.json`:
       "items": {
         "type": "object",
         "properties": {
-          "role":    { "type": "string", "enum": ["user", "assistant", "system"] },
+          "role": { "type": "string", "enum": ["user", "assistant", "system"] },
           "content": { "type": "string" }
         },
         "required": ["role", "content"]

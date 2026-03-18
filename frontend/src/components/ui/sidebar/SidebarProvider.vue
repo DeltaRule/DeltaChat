@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { cn } from '@/lib/utils'
 import { provideSidebar, SIDEBAR_WIDTH, SIDEBAR_WIDTH_ICON } from '@/composables/useSidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -20,9 +20,19 @@ const sidebar = provideSidebar(props.defaultOpen)
         '--sidebar-width': SIDEBAR_WIDTH,
         '--sidebar-width-icon': SIDEBAR_WIDTH_ICON,
       }"
-      :class="cn('group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex h-full w-full', props.class)"
+      :class="
+        cn(
+          'group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex h-full w-full',
+          props.class,
+        )
+      "
     >
-      <slot :open="sidebar.open.value" :state="sidebar.state.value" :is-mobile="sidebar.isMobile.value" :toggle="sidebar.toggleSidebar" />
+      <slot
+        :open="sidebar.open.value"
+        :state="sidebar.state.value"
+        :is-mobile="sidebar.isMobile.value"
+        :toggle="sidebar.toggleSidebar"
+      />
     </div>
   </TooltipProvider>
 </template>

@@ -1,12 +1,16 @@
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
 /* ── Register shadcn-vue colours with Tailwind v4 ────────────── */
 @theme inline {
-  --font-sans: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --font-sans:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -132,7 +136,9 @@
   }
   body {
     @apply bg-background text-foreground font-sans;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow: hidden;
@@ -161,29 +167,57 @@
 
 /* ── Animations ──────────────────────────────────────────────── */
 @keyframes gradientShift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 @keyframes pulseGlow {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-6px); }
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 @keyframes messageSlideIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ── Selection color ─────────────────────────────────────────── */
@@ -194,7 +228,12 @@
 
 /* ── Gradient text utility ───────────────────────────────────── */
 .gradient-text {
-  background: linear-gradient(135deg, var(--color-primary) 0%, color-mix(in oklch, var(--color-primary) 60%, transparent) 50%, var(--color-primary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--color-primary) 0%,
+    color-mix(in oklch, var(--color-primary) 60%, transparent) 50%,
+    var(--color-primary) 100%
+  );
   background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -203,60 +242,53 @@
 }
 
 /* ── Markdown rendering ──────────────────────────────────────── */
-.markdown-body p { margin-bottom: 10px; line-height: 1.7; }
-.markdown-body p:last-child { margin-bottom: 0; }
+.markdown-body p {
+  @apply mb-2.5 leading-relaxed;
+}
+.markdown-body p:last-child {
+  @apply mb-0;
+}
 .markdown-body pre {
-  background: var(--color-muted);
-  padding: 16px 18px;
-  border-radius: 12px;
-  overflow-x: auto;
-  margin: 10px 0;
-  font-size: 0.85em;
-  border: 1px solid var(--color-border);
+  @apply bg-muted px-[18px] py-4 rounded-xl overflow-x-auto my-2.5 text-[0.85em] border border-border;
 }
 .markdown-body code {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 0.85em;
+  @apply font-mono text-[0.85em];
 }
 .markdown-body :not(pre) > code {
+  @apply px-1.5 py-0.5 rounded text-[0.85em];
   background: color-mix(in oklch, var(--color-primary) 10%, transparent);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.85em;
 }
-.markdown-body ul, .markdown-body ol { padding-left: 20px; margin: 8px 0; }
-.markdown-body li { margin-bottom: 4px; }
+.markdown-body ul,
+.markdown-body ol {
+  @apply pl-5 my-2;
+}
+.markdown-body li {
+  @apply mb-1;
+}
 .markdown-body blockquote {
+  @apply my-2 py-1 px-3 opacity-85;
   border-left: 3px solid color-mix(in oklch, var(--color-primary) 40%, transparent);
-  margin: 8px 0;
-  padding: 4px 12px;
-  opacity: 0.85;
 }
-.markdown-body h1, .markdown-body h2, .markdown-body h3 {
-  margin-top: 16px;
-  margin-bottom: 8px;
-  font-weight: 600;
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  @apply mt-4 mb-2 font-semibold;
 }
 .markdown-body a {
-  color: var(--color-primary);
-  text-decoration: none;
+  @apply text-primary no-underline;
 }
 .markdown-body a:hover {
-  text-decoration: underline;
+  @apply underline;
 }
 .markdown-body table {
-  border-collapse: collapse;
-  margin: 8px 0;
-  width: 100%;
+  @apply w-full my-2 border-collapse;
 }
-.markdown-body th, .markdown-body td {
-  padding: 6px 12px;
-  border: 1px solid var(--color-border);
-  text-align: left;
+.markdown-body th,
+.markdown-body td {
+  @apply px-3 py-1.5 border border-border text-left;
 }
 .markdown-body th {
-  font-weight: 600;
-  background: var(--color-muted);
+  @apply font-semibold bg-muted;
 }
 
 @layer base {

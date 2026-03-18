@@ -1,5 +1,5 @@
-'use strict';
-import 'dotenv/config';
+'use strict'
+import 'dotenv/config'
 
 const config = {
   port: parseInt(process.env['PORT'] ?? '3000', 10),
@@ -43,12 +43,16 @@ const config = {
   },
   adminEmail: process.env['ADMIN_EMAIL'] ?? '',
   logLevel: (process.env['LOG_LEVEL'] ?? 'info') as 'error' | 'warn' | 'info' | 'debug',
-  ragChunkTemplate: process.env['RAG_CHUNK_TEMPLATE'] ?? '\n\n---\nRelevant context from knowledge base:\n{chunks}',
+  ragChunkTemplate:
+    process.env['RAG_CHUNK_TEMPLATE'] ?? '\n\n---\nRelevant context from knowledge base:\n{chunks}',
   cors: {
-    origins: (process.env['CORS_ORIGINS'] ?? 'http://localhost:3000,http://localhost:5173,http://localhost:5174')
+    origins: (
+      process.env['CORS_ORIGINS'] ??
+      'http://localhost:3000,http://localhost:5173,http://localhost:5174'
+    )
       .split(',')
       .map((o) => o.trim()),
   },
-} as const;
+} as const
 
-export default config;
+export default config

@@ -1,10 +1,10 @@
-<script setup>
-import { SelectGroup } from "reka-ui";
+<script setup lang="ts">
+import { SelectGroup } from 'reka-ui'
 
 const props = defineProps({
   asChild: { type: Boolean, required: false },
   as: { type: null, required: false },
-});
+})
 </script>
 
 <template>

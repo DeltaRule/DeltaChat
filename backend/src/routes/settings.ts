@@ -1,34 +1,34 @@
-'use strict';
+'use strict'
 
-import { Router, Request, Response, NextFunction } from 'express';
-import { getAdapter } from '../db/DeltaDatabaseAdapter';
-import { clearProviderCache } from '../services/ChatService';
-import { requireAdmin } from '../middleware/auth';
+import { Router, Request, Response, NextFunction } from 'express'
+import { getAdapter } from '../db/DeltaDatabaseAdapter'
+import { clearProviderCache } from '../services/ChatService'
+import { requireAdmin } from '../middleware/auth'
 
-const router = Router();
+const router = Router()
 
 // GET /api/settings
 router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const db = getAdapter();
-    const settings = await db.getSettings();
-    res.json(settings);
+    const db = getAdapter()
+    const settings = await db.getSettings()
+    res.json(settings)
   } catch (err) {
-    next(err);
+    next(err)
   }
-});
+})
 
 // PUT /api/settings — admin only
 router.put('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const db = getAdapter();
-    const settings = await db.updateSettings(req.body as Record<string, unknown>);
+    const db = getAdapter()
+    const settings = await db.updateSettings(req.body as Record<string, unknown>)
     // Clear cached providers so new settings take effect immediately
-    clearProviderCache();
-    res.json(settings);
+    clearProviderCache()
+    res.json(settings)
   } catch (err) {
-    next(err);
+    next(err)
   }
-});
+})
 
-export default router;
+export default router

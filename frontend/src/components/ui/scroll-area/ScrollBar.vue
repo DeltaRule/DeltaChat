@@ -1,10 +1,15 @@
-<script setup>
-import { reactiveOmit } from "@vueuse/core";
-import { ScrollAreaScrollbar, ScrollAreaThumb } from "reka-ui";
-import { cn } from "@/lib/utils";
+<script setup lang="ts">
+import { reactiveOmit } from '@vueuse/core'
+import { ScrollAreaScrollbar, ScrollAreaThumb } from 'reka-ui'
+import type { PropType } from 'vue'
+import { cn } from '@/lib/utils'
 
 const props = defineProps({
-  orientation: { type: String, required: false, default: "vertical" },
+  orientation: {
+    type: String as PropType<'horizontal' | 'vertical'>,
+    required: false,
+    default: 'vertical',
+  },
   forceMount: { type: Boolean, required: false },
   asChild: { type: Boolean, required: false },
   as: { type: null, required: false },
@@ -13,9 +18,9 @@ const props = defineProps({
     required: false,
     skipCheck: true,
   },
-});
+})
 
-const delegatedProps = reactiveOmit(props, "class");
+const delegatedProps = reactiveOmit(props, 'class')
 </script>
 
 <template>
@@ -25,17 +30,12 @@ const delegatedProps = reactiveOmit(props, "class");
     :class="
       cn(
         'flex touch-none p-px transition-colors select-none',
-        orientation === 'vertical' &&
-          'h-full w-2.5 border-l border-l-transparent',
-        orientation === 'horizontal' &&
-          'h-2.5 flex-col border-t border-t-transparent',
+        orientation === 'vertical' && 'h-full w-2.5 border-l border-l-transparent',
+        orientation === 'horizontal' && 'h-2.5 flex-col border-t border-t-transparent',
         props.class,
       )
     "
   >
-    <ScrollAreaThumb
-      data-slot="scroll-area-thumb"
-      class="bg-border relative flex-1 rounded-full"
-    />
+    <ScrollAreaThumb data-slot="scroll-area-thumb" class="bg-border relative flex-1 rounded-full" />
   </ScrollAreaScrollbar>
 </template>

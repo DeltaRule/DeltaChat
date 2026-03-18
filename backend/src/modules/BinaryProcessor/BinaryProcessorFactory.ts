@@ -1,52 +1,54 @@
-'use strict';
+'use strict'
 
-import BinaryProcessorBase from './BinaryProcessorBase';
-import config from '../../config';
+import BinaryProcessorBase from './BinaryProcessorBase'
+import config from '../../config'
 
 export interface BinaryProcessorConfig {
-  type: 'langchain' | 'tika' | 'docling';
-  url?: string;
+  type: 'langchain' | 'tika' | 'docling'
+  url?: string
 }
 
-const _instances = new Map<string, BinaryProcessorBase>();
+const _instances = new Map<string, BinaryProcessorBase>()
 
 function configKey(cfg: BinaryProcessorConfig): string {
-  return JSON.stringify({ type: cfg.type, url: cfg.url });
+  return JSON.stringify({ type: cfg.type, url: cfg.url })
 }
 
 export function createBinaryProcessor(cfg: BinaryProcessorConfig): BinaryProcessorBase {
-  const key = configKey(cfg);
-  const cached = _instances.get(key);
-  if (cached) return cached;
+  const key = configKey(cfg)
+  const cached = _instances.get(key)
+  if (cached) return cached
 
-  let instance: BinaryProcessorBase;
+  let instance: BinaryProcessorBase
 
   switch (cfg.type) {
     case 'tika': {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const TikaProcessor = require('./TikaProcessor').default as new (opts: { url: string }) => BinaryProcessorBase;
-      instance = new TikaProcessor({ url: cfg.url ?? config.tika.url });
-      break;
+      const TikaProcessor = require('./TikaProcessor').default as new (opts: {
+        url: string
+      }) => BinaryProcessorBase
+      instance = new TikaProcessor({ url: cfg.url ?? config.tika.url })
+      break
     }
     case 'docling': {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const DoclingProcessor = require('./DoclingProcessor').default as new (opts: { url: string }) => BinaryProcessorBase;
-      instance = new DoclingProcessor({ url: cfg.url ?? config.docling.url });
-      break;
+      const DoclingProcessor = require('./DoclingProcessor').default as new (opts: {
+        url: string
+      }) => BinaryProcessorBase
+      instance = new DoclingProcessor({ url: cfg.url ?? config.docling.url })
+      break
     }
     case 'langchain':
     default: {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const LangChainProcessor = require('./LangChainProcessor').default as new () => BinaryProcessorBase;
-      instance = new LangChainProcessor();
-      break;
+      const LangChainProcessor = require('./LangChainProcessor')
+        .default as new () => BinaryProcessorBase
+      instance = new LangChainProcessor()
+      break
     }
   }
 
-  _instances.set(key, instance);
-  return instance;
+  _instances.set(key, instance)
+  return instance
 }
 
 export function clearBinaryProcessorCache(): void {
-  _instances.clear();
+  _instances.clear()
 }

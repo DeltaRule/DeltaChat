@@ -51,6 +51,7 @@
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/cheerio": "^0.22.35",
     "@types/cors": "^2.8.19",
@@ -64,11 +65,13 @@
     "axios-mock-adapter": "^2.1.0",
     "cross-env": "^10.1.0",
     "eslint": "^10.0.3",
+    "eslint-config-prettier": "^10.1.8",
     "jest": "^30.3.0",
     "nodemon": "^3.1.14",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.1"
   },
   "engines": {
     "node": ">=18.0.0"

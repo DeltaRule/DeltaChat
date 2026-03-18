@@ -1,27 +1,27 @@
-'use strict';
+'use strict'
 
-import axios from 'axios';
-import BinaryProcessorBase, { ProcessResult } from './BinaryProcessorBase';
-import config from '../../config';
+import axios from 'axios'
+import BinaryProcessorBase, { ProcessResult } from './BinaryProcessorBase'
+import config from '../../config'
 
 interface TikaProcessorOpts {
-  url?: string;
+  url?: string
 }
 
 class TikaProcessor extends BinaryProcessorBase {
-  private _url: string;
+  private _url: string
 
   constructor(opts: TikaProcessorOpts = {}) {
-    super();
-    this._url = opts.url ?? config.tika.url;
+    super()
+    this._url = opts.url ?? config.tika.url
   }
 
   async process(buffer: Buffer, mimeType: string): Promise<ProcessResult> {
     const [text, metadata] = await Promise.all([
       this._extractText(buffer, mimeType),
       this._extractMeta(buffer, mimeType),
-    ]);
-    return { text, metadata };
+    ])
+    return { text, metadata }
   }
 
   private async _extractText(buffer: Buffer, mimeType: string): Promise<string> {
@@ -31,8 +31,8 @@ class TikaProcessor extends BinaryProcessorBase {
         Accept: 'text/plain',
       },
       maxBodyLength: Infinity,
-    });
-    return typeof response.data === 'string' ? response.data : String(response.data);
+    })
+    return typeof response.data === 'string' ? response.data : String(response.data)
   }
 
   private async _extractMeta(buffer: Buffer, mimeType: string): Promise<Record<string, unknown>> {
@@ -43,12 +43,12 @@ class TikaProcessor extends BinaryProcessorBase {
           Accept: 'application/json',
         },
         maxBodyLength: Infinity,
-      });
-      return response.data ?? {};
+      })
+      return response.data ?? {}
     } catch {
-      return {};
+      return {}
     }
   }
 }
 
-export default TikaProcessor;
+export default TikaProcessor

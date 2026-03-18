@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
@@ -9,12 +9,14 @@ const props = defineProps({
 <template>
   <Badge
     data-slot="sidebar-menu-badge"
-    :class="cn(
-      'text-sidebar-foreground pointer-events-none absolute right-1 flex h-5 min-w-5 select-none items-center justify-center rounded-md px-1 text-xs font-medium tabular-nums',
-      'peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[active=true]/menu-button:text-sidebar-accent-foreground',
-      'group-data-[collapsible=icon]:hidden',
-      props.class,
-    )"
+    :class="
+      cn(
+        'text-sidebar-foreground pointer-events-none absolute right-1 flex h-5 min-w-5 select-none items-center justify-center rounded-md px-1 text-xs font-medium tabular-nums',
+        'peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[active=true]/menu-button:text-sidebar-accent-foreground',
+        'group-data-[collapsible=icon]:hidden',
+        props.class,
+      )
+    "
   >
     <slot />
   </Badge>
