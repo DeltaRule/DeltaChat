@@ -239,7 +239,7 @@ const modelItems = computed(() => {
   const models = modelsStore.aiModels
     .filter((m) => m.enabled !== false && m.type !== 'embedding')
     .map((m) => ({ title: m.name || 'Unnamed Model', value: m.id }))
-  if (!models.length) return [{ title: 'No model selected', value: '' }]
+  if (!models.length) return [{ title: 'No model selected', value: '__none__' }]
   return models
 })
 

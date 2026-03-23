@@ -83,6 +83,31 @@ function createEmbeddingFromModel(model: Entity): EmbeddingProviderBase {
         .default as new (opts: { model?: string }) => EmbeddingProviderBase
       return new OpenAIEmbedding({ model: providerModel ?? undefined })
     }
+    case 'gemini': {
+      const GeminiEmbedding = require('../modules/EmbeddingProvider/GeminiEmbedding')
+        .default as new (opts: { model?: string }) => EmbeddingProviderBase
+      return new GeminiEmbedding({ model: providerModel ?? undefined })
+    }
+    case 'cohere': {
+      const CohereEmbedding = require('../modules/EmbeddingProvider/CohereEmbedding')
+        .default as new (opts: { model?: string }) => EmbeddingProviderBase
+      return new CohereEmbedding({ model: providerModel ?? undefined })
+    }
+    case 'azure': {
+      const AzureOpenAIEmbedding = require('../modules/EmbeddingProvider/AzureOpenAIEmbedding')
+        .default as new (opts: { model?: string }) => EmbeddingProviderBase
+      return new AzureOpenAIEmbedding({ model: providerModel ?? undefined })
+    }
+    case 'mistral': {
+      const MistralEmbedding = require('../modules/EmbeddingProvider/MistralEmbedding')
+        .default as new (opts: { model?: string }) => EmbeddingProviderBase
+      return new MistralEmbedding({ model: providerModel ?? undefined })
+    }
+    case 'huggingface': {
+      const HuggingFaceEmbedding = require('../modules/EmbeddingProvider/HuggingFaceEmbedding')
+        .default as new (opts: { model?: string }) => EmbeddingProviderBase
+      return new HuggingFaceEmbedding({ model: providerModel ?? undefined })
+    }
     case 'ollama':
     default: {
       const OllamaEmbedding = require('../modules/EmbeddingProvider/OllamaEmbedding')

@@ -4,8 +4,9 @@ import BinaryProcessorBase from './BinaryProcessorBase'
 import config from '../../config'
 
 export interface BinaryProcessorConfig {
-  type: 'langchain' | 'tika' | 'docling'
+  type: 'langchain' | 'tika' | 'docling' | 'unstructured'
   url?: string
+  apiKey?: string
 }
 
 const _instances = new Map<string, BinaryProcessorBase>()
@@ -34,6 +35,17 @@ export function createBinaryProcessor(cfg: BinaryProcessorConfig): BinaryProcess
         url: string
       }) => BinaryProcessorBase
       instance = new DoclingProcessor({ url: cfg.url ?? config.docling.url })
+      break
+    }
+    case 'unstructured': {
+      const UnstructuredProcessor = require('./UnstructuredProcessor').default as new (opts: {
+        url: string
+        apiKey?: string
+      }) => BinaryProcessorBase
+      instance = new UnstructuredProcessor({
+        url: cfg.url ?? config.unstructured.url,
+        apiKey: cfg.apiKey ?? config.unstructured.apiKey,
+      })
       break
     }
     case 'langchain':

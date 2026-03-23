@@ -3,7 +3,13 @@
     <!-- Login page – full-screen, no shell -->
     <template v-if="isLogin">
       <router-view />
-      <Toaster :theme="themeStore.isDark ? 'dark' : 'light'" position="bottom-right" rich-colors />
+      <Teleport to="body">
+        <Toaster
+          :theme="themeStore.isDark ? 'dark' : 'light'"
+          position="bottom-right"
+          rich-colors
+        />
+      </Teleport>
     </template>
 
     <!-- Authenticated app shell -->
@@ -90,7 +96,7 @@
         <!-- Content area -->
         <div class="flex-1 min-h-0 overflow-hidden relative">
           <!-- Chat view -->
-          <div v-if="!isSettings && !isAdmin" class="h-full">
+          <div v-if="!isSettings && !isAdmin" key="chat-content" class="h-full">
             <SidebarProvider v-slot="{ toggle }" class="min-h-0 h-full">
               <SidebarToggleCapture :toggle="toggle" />
               <AppNavigation />
@@ -101,7 +107,7 @@
           </div>
 
           <!-- Settings / Admin view -->
-          <div v-else class="h-full overflow-hidden">
+          <div v-else key="settings-content" class="h-full overflow-hidden">
             <SidebarProvider class="min-h-0 h-full">
               <router-view />
             </SidebarProvider>
@@ -109,7 +115,13 @@
         </div>
       </TooltipProvider>
 
-      <Toaster :theme="themeStore.isDark ? 'dark' : 'light'" position="bottom-right" rich-colors />
+      <Teleport to="body">
+        <Toaster
+          :theme="themeStore.isDark ? 'dark' : 'light'"
+          position="bottom-right"
+          rich-colors
+        />
+      </Teleport>
     </template>
   </div>
 </template>

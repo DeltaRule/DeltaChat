@@ -102,6 +102,7 @@ router.post('/:id/messages', async (req: Request, res: Response, next: NextFunct
   }
 
   const wantsStream = streamRequested === true || req.headers.accept === 'text/event-stream'
+  req.services.chatService.setToolExecutionService(req.services.toolExecutionService)
 
   if (wantsStream) {
     res.setHeader('Content-Type', 'text/event-stream')

@@ -39,6 +39,17 @@ describe('SCHEMAS', () => {
   test('webhooks requires id, name, and url', () => {
     expect(SCHEMAS['webhooks']!.required).toEqual(expect.arrayContaining(['id', 'name', 'url']))
   })
+
+  test('tools type enum only includes mcp/python/typescript', () => {
+    const toolTypeField = SCHEMAS['tools']?.fields?.['type']
+    expect(typeof toolTypeField).toBe('string')
+    expect(toolTypeField).toContain('"mcp"')
+    expect(toolTypeField).toContain('"python"')
+    expect(toolTypeField).toContain('"typescript"')
+    expect(toolTypeField).not.toContain('"python-server"')
+    expect(toolTypeField).not.toContain('"wasm"')
+    expect(toolTypeField).not.toContain('"http"')
+  })
 })
 
 describe('validate', () => {

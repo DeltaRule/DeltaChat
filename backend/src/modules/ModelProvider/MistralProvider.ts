@@ -4,25 +4,26 @@ import OpenAI from 'openai'
 import ModelProviderBase, { ChatMessage, ChatResult, ModelOptions } from './ModelProviderBase'
 import config from '../../config'
 
-interface OpenAIProviderOpts {
+interface MistralProviderOpts {
   apiKey?: string
   defaultModel?: string
 }
 
-class OpenAIProvider extends ModelProviderBase {
+class MistralProvider extends ModelProviderBase {
   private _client: OpenAI
   private _defaultModel: string
 
-  constructor(opts: OpenAIProviderOpts = {}) {
+  constructor(opts: MistralProviderOpts = {}) {
     super()
     this._client = new OpenAI({
-      apiKey: opts.apiKey ?? config.openai.apiKey,
+      apiKey: opts.apiKey ?? config.mistral.apiKey,
+      baseURL: 'https://api.mistral.ai/v1',
     })
-    this._defaultModel = opts.defaultModel ?? config.openai.defaultModel
+    this._defaultModel = opts.defaultModel ?? config.mistral.defaultModel
   }
 
   getName(): string {
-    return 'openai'
+    return 'mistral'
   }
 
   supportsTools(): boolean {
@@ -30,41 +31,23 @@ class OpenAIProvider extends ModelProviderBase {
   }
 
   async getModels(): Promise<string[]> {
-    const list = await this._client.models.list()
-    return list.data
-      .filter((m) => m.id.startsWith('gpt'))
-      .map((m) => m.id)
-      .sort()
-  }
-
-  private _mapMessages(
-    messages: ChatMessage[],
-  ): import('openai/resources/chat').ChatCompletionMessageParam[] {
-    return messages.map((m) => {
-      if (m.role === 'tool' && m.toolCallId) {
-        return { role: 'tool' as const, content: m.content, tool_call_id: m.toolCallId }
-      }
-      if (m.role === 'assistant' && m.toolCalls?.length) {
-        return {
-          role: 'assistant' as const,
-          content: m.content || null,
-          tool_calls: m.toolCalls.map((tc) => ({
-            id: tc.id,
-            type: 'function' as const,
-            function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
-          })),
-        }
-      }
-      return {
-        role: m.role,
-        content: m.content,
-      } as import('openai/resources/chat').ChatCompletionMessageParam
-    })
+    try {
+      const list = await this._client.models.list()
+      return list.data.map((m) => m.id).sort()
+    } catch {
+      return [
+        'mistral-large-latest',
+        'mistral-medium-latest',
+        'mistral-small-latest',
+        'open-mistral-nemo',
+        'codestral-latest',
+      ]
+    }
   }
 
   async chat(messages: ChatMessage[], options: ModelOptions = {}): Promise<ChatResult> {
     const model = options.model ?? this._defaultModel
-    const msgParams = this._mapMessages(messages)
+    const msgParams = messages as import('openai/resources/chat').ChatCompletionMessageParam[]
     const response = await this._client.chat.completions.create({
       model,
       messages: msgParams,
@@ -119,7 +102,7 @@ class OpenAIProvider extends ModelProviderBase {
 
   async *stream(messages: ChatMessage[], options: ModelOptions = {}): AsyncGenerator<string> {
     const model = options.model ?? this._defaultModel
-    const msgParams = this._mapMessages(messages)
+    const msgParams = messages as import('openai/resources/chat').ChatCompletionMessageParam[]
     const stream = await this._client.chat.completions.create({
       model,
       messages: msgParams,
@@ -135,4 +118,4 @@ class OpenAIProvider extends ModelProviderBase {
   }
 }
 
-export default OpenAIProvider
+export default MistralProvider

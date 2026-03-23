@@ -5,6 +5,8 @@ import ChatService from '../services/ChatService'
 import KnowledgeService from '../services/KnowledgeService'
 import WebhookService from '../services/WebhookService'
 import McpService from '../services/McpService'
+import ToolExecutionService from '../services/ToolExecutionService'
+import { getAdapter } from '../db/DeltaDatabaseAdapter'
 
 import { requireAuth } from '../middleware/auth'
 import authRouter from './auth'
@@ -30,8 +32,15 @@ const mcpService = new McpService()
 chatService.setKnowledgeService(knowledgeService)
 
 // Service injection — available to all subsequent routes
-router.use((req: Request, _res: Response, next: NextFunction) => {
-  req.services = { chatService, knowledgeService, webhookService, mcpService }
+router.use(async (req: Request, _res: Response, next: NextFunction) => {
+  const db = getAdapter()
+  const settings = (await db.getSettings()) as Record<string, unknown>
+  const executorsConfig = (settings['executors'] as Record<string, unknown>) || {}
+  const toolExecutionService = new ToolExecutionService(mcpService, {
+    python: executorsConfig['python'] as any,
+    typescript: executorsConfig['typescript'] as any,
+  })
+  req.services = { chatService, knowledgeService, webhookService, mcpService, toolExecutionService }
   next()
 })
 

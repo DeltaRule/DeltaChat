@@ -296,7 +296,12 @@ export class DeltaDatabaseClient {
       const fetched = await Promise.all(idx.keys.map((id) => this._get(collection, id)))
       docs = (fetched as (Entity | null)[]).filter((d): d is Entity => !!d)
     } else {
+      // No secondary index found — full-scan with ALL filter fields applied
       docs = await this.findAll(collection)
+      for (const [k, v] of filterEntries) {
+        docs = docs.filter((d) => d[k] === v)
+      }
+      return docs.slice(0, limit)
     }
 
     for (const [k, v] of filterEntries.slice(1)) {

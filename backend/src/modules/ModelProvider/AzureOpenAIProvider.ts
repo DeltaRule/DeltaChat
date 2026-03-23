@@ -1,28 +1,32 @@
 'use strict'
 
-import OpenAI from 'openai'
+import { AzureOpenAI } from 'openai'
 import ModelProviderBase, { ChatMessage, ChatResult, ModelOptions } from './ModelProviderBase'
 import config from '../../config'
 
-interface OpenAIProviderOpts {
+interface AzureOpenAIProviderOpts {
   apiKey?: string
+  endpoint?: string
   defaultModel?: string
+  apiVersion?: string
 }
 
-class OpenAIProvider extends ModelProviderBase {
-  private _client: OpenAI
+class AzureOpenAIProvider extends ModelProviderBase {
+  private _client: AzureOpenAI
   private _defaultModel: string
 
-  constructor(opts: OpenAIProviderOpts = {}) {
+  constructor(opts: AzureOpenAIProviderOpts = {}) {
     super()
-    this._client = new OpenAI({
-      apiKey: opts.apiKey ?? config.openai.apiKey,
+    this._client = new AzureOpenAI({
+      apiKey: opts.apiKey ?? config.azureOpenai.apiKey,
+      endpoint: opts.endpoint ?? config.azureOpenai.endpoint,
+      apiVersion: opts.apiVersion ?? config.azureOpenai.apiVersion,
     })
-    this._defaultModel = opts.defaultModel ?? config.openai.defaultModel
+    this._defaultModel = opts.defaultModel ?? config.azureOpenai.defaultModel
   }
 
   getName(): string {
-    return 'openai'
+    return 'azure'
   }
 
   supportsTools(): boolean {
@@ -30,11 +34,12 @@ class OpenAIProvider extends ModelProviderBase {
   }
 
   async getModels(): Promise<string[]> {
-    const list = await this._client.models.list()
-    return list.data
-      .filter((m) => m.id.startsWith('gpt'))
-      .map((m) => m.id)
-      .sort()
+    try {
+      const list = await this._client.models.list()
+      return list.data.map((m) => m.id).sort()
+    } catch {
+      return [this._defaultModel]
+    }
   }
 
   private _mapMessages(
@@ -135,4 +140,4 @@ class OpenAIProvider extends ModelProviderBase {
   }
 }
 
-export default OpenAIProvider
+export default AzureOpenAIProvider

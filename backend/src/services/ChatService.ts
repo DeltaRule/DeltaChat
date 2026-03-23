@@ -2,21 +2,28 @@
 
 import { randomUUID } from 'crypto'
 import { getAdapter, DeltaDatabaseAdapter, Entity } from '../db/DeltaDatabaseAdapter'
-import ModelProviderBase from '../modules/ModelProvider/ModelProviderBase'
+import ModelProviderBase, {
+  ChatMessage as ModelChatMessage,
+  ChatResult,
+  ToolCall,
+  ToolDefinition,
+} from '../modules/ModelProvider/ModelProviderBase'
 import OpenAIProvider from '../modules/ModelProvider/OpenAIProvider'
 import GeminiProvider from '../modules/ModelProvider/GeminiProvider'
 import OllamaProvider from '../modules/ModelProvider/OllamaProvider'
+import AnthropicProvider from '../modules/ModelProvider/AnthropicProvider'
+import GroqProvider from '../modules/ModelProvider/GroqProvider'
+import AzureOpenAIProvider from '../modules/ModelProvider/AzureOpenAIProvider'
+import MistralProvider from '../modules/ModelProvider/MistralProvider'
+import DeepSeekProvider from '../modules/ModelProvider/DeepSeekProvider'
+import CohereProvider from '../modules/ModelProvider/CohereProvider'
 import type KnowledgeService from './KnowledgeService'
+import type ToolExecutionService from './ToolExecutionService'
 import config from '../config'
 import logger from '../logger'
 
 interface AppError extends Error {
   status?: number
-}
-
-interface ChatMessage {
-  role: string
-  content: string
 }
 
 interface StreamCallbacks {
@@ -47,6 +54,7 @@ interface ChatServiceOpts {
   db?: DeltaDatabaseAdapter
   getProvider?: () => ModelProviderBase
   knowledgeService?: KnowledgeService | null
+  toolExecutionService?: ToolExecutionService | null
 }
 
 interface ProviderSettings {
@@ -54,6 +62,24 @@ interface ProviderSettings {
   apiKey?: string
   baseUrl?: string
   defaultModel?: string
+  apiVersion?: string
+}
+
+interface ResolvedModelConfig {
+  systemPromptOverride?: string
+  knowledgeStoreIdsOverride?: string[]
+  modelOpts: Record<string, unknown>
+  toolIds: string[]
+  providerOverride?: string
+}
+
+interface ToolEntity {
+  id: string
+  name: string
+  description?: string | null
+  type: 'mcp' | 'python' | 'typescript'
+  config: Record<string, unknown>
+  enabled?: boolean
 }
 
 /** Cache of provider instances keyed by provider name */
@@ -103,6 +129,72 @@ async function buildProvider(
       })
       break
     }
+    case 'anthropic': {
+      const apiKey = ps.apiKey || config.anthropic.apiKey
+      if (!apiKey)
+        throw Object.assign(new Error('Anthropic API key not configured'), { status: 400 })
+      provider = new AnthropicProvider({
+        apiKey,
+        defaultModel: ps.defaultModel || config.anthropic.defaultModel,
+      })
+      break
+    }
+    case 'groq': {
+      const apiKey = ps.apiKey || config.groq.apiKey
+      if (!apiKey) throw Object.assign(new Error('Groq API key not configured'), { status: 400 })
+      provider = new GroqProvider({
+        apiKey,
+        defaultModel: ps.defaultModel || config.groq.defaultModel,
+      })
+      break
+    }
+    case 'azure': {
+      const apiKey = ps.apiKey || config.azureOpenai.apiKey
+      const endpointRaw = ps.baseUrl || config.azureOpenai.endpoint
+      let endpoint = String(endpointRaw || '')
+        .trim()
+        .replace(/\/+$/, '')
+      endpoint = endpoint.replace(/\/openai(?:\/.*)?$/i, '')
+      if (!apiKey || !endpoint)
+        throw Object.assign(new Error('Azure OpenAI API key or endpoint not configured'), {
+          status: 400,
+        })
+      provider = new AzureOpenAIProvider({
+        apiKey,
+        endpoint,
+        apiVersion: ps.apiVersion || config.azureOpenai.apiVersion,
+        defaultModel: ps.defaultModel || config.azureOpenai.defaultModel,
+      })
+      break
+    }
+    case 'mistral': {
+      const apiKey = ps.apiKey || config.mistral.apiKey
+      if (!apiKey) throw Object.assign(new Error('Mistral API key not configured'), { status: 400 })
+      provider = new MistralProvider({
+        apiKey,
+        defaultModel: ps.defaultModel || config.mistral.defaultModel,
+      })
+      break
+    }
+    case 'deepseek': {
+      const apiKey = ps.apiKey || config.deepseek.apiKey
+      if (!apiKey)
+        throw Object.assign(new Error('DeepSeek API key not configured'), { status: 400 })
+      provider = new DeepSeekProvider({
+        apiKey,
+        defaultModel: ps.defaultModel || config.deepseek.defaultModel,
+      })
+      break
+    }
+    case 'cohere': {
+      const apiKey = ps.apiKey || config.cohere.apiKey
+      if (!apiKey) throw Object.assign(new Error('Cohere API key not configured'), { status: 400 })
+      provider = new CohereProvider({
+        apiKey,
+        defaultModel: ps.defaultModel || config.cohere.defaultModel,
+      })
+      break
+    }
     default:
       throw Object.assign(new Error(`Unknown provider: ${providerName}`), { status: 400 })
   }
@@ -128,15 +220,21 @@ class ChatService {
   private _db: DeltaDatabaseAdapter
   private _getProvider: () => ModelProviderBase
   private _knowledgeService: KnowledgeService | null
+  private _toolExecutionService: ToolExecutionService | null
 
   constructor(opts: ChatServiceOpts = {}) {
     this._db = opts.db ?? getAdapter()
     this._getProvider = opts.getProvider ?? getDefaultProvider
     this._knowledgeService = opts.knowledgeService ?? null
+    this._toolExecutionService = opts.toolExecutionService ?? null
   }
 
   setKnowledgeService(svc: KnowledgeService): void {
     this._knowledgeService = svc
+  }
+
+  setToolExecutionService(svc: ToolExecutionService): void {
+    this._toolExecutionService = svc
   }
 
   // ── Chat CRUD ──────────────────────────────────────────────────────────────
@@ -214,8 +312,8 @@ class ChatService {
       resolved.knowledgeStoreIdsOverride,
     )
 
-    const provider = await this._resolveProvider(opts, chat)
-    const result = await provider.chat(messages, resolved.modelOpts)
+    const provider = await this._resolveProvider(opts, chat, resolved.providerOverride)
+    const result = await this._runWithTools(provider, messages, resolved)
 
     const assistantMessage = await this._db.createMessage({
       id: randomUUID(),
@@ -262,13 +360,19 @@ class ChatService {
       resolved.systemPromptOverride,
       resolved.knowledgeStoreIdsOverride,
     )
-    const provider = await this._resolveProvider(opts, chat)
+    const provider = await this._resolveProvider(opts, chat, resolved.providerOverride)
 
     let full = ''
     try {
-      for await (const chunk of provider.stream(messages, resolved.modelOpts)) {
-        full += chunk
-        onChunk(chunk)
+      if (resolved.toolIds.length > 0) {
+        const toolResult = await this._runWithTools(provider, messages, resolved)
+        full = toolResult.content
+        if (full) onChunk(full)
+      } else {
+        for await (const chunk of provider.stream(messages, resolved.modelOpts)) {
+          full += chunk
+          onChunk(chunk)
+        }
       }
 
       const assistantMessage = await this._db.createMessage({
@@ -295,8 +399,8 @@ class ChatService {
     newUserContent: string,
     systemPromptOverride?: string,
     knowledgeStoreIdsOverride?: string[],
-  ): Promise<{ messages: ChatMessage[]; sources: RagSource[] }> {
-    const history: ChatMessage[] = (chat.messages ?? []).map((m) => ({
+  ): Promise<{ messages: ModelChatMessage[]; sources: RagSource[] }> {
+    const history: ModelChatMessage[] = (chat.messages ?? []).map((m) => ({
       role: m['role'] as string,
       content: m['content'] as string,
     }))
@@ -355,7 +459,7 @@ class ChatService {
       }
     }
 
-    const messages: ChatMessage[] = []
+    const messages: ModelChatMessage[] = []
 
     const systemPrompt =
       systemPromptOverride ??
@@ -381,9 +485,14 @@ class ChatService {
     return { messages, sources }
   }
 
-  private async _resolveProvider(opts: SendMessageOpts, chat?: Entity): Promise<ModelProviderBase> {
+  private async _resolveProvider(
+    opts: SendMessageOpts,
+    chat?: Entity,
+    providerOverride?: string,
+  ): Promise<ModelProviderBase> {
     // 1. Explicit provider from opts
-    const providerName = opts.provider ?? (chat?.['provider'] as string | undefined)
+    const providerName =
+      providerOverride ?? opts.provider ?? (chat?.['provider'] as string | undefined)
 
     if (providerName) {
       try {
@@ -403,6 +512,12 @@ class ChatService {
         const aiModel = await this._db.getAiModel(modelId)
         if (aiModel?.['provider']) {
           return await buildProvider(aiModel['provider'] as string, this._db)
+        }
+        if (aiModel?.['type'] === 'agent' && aiModel['agentId']) {
+          const agent = await this._db.getAgent(aiModel['agentId'] as string)
+          if (agent?.['provider']) {
+            return await buildProvider(agent['provider'] as string, this._db)
+          }
         }
       } catch {
         // fall through to default
@@ -428,28 +543,32 @@ class ChatService {
   private async _resolveModelConfig(
     opts: SendMessageOpts,
     chat: Entity,
-  ): Promise<{
-    systemPromptOverride?: string
-    knowledgeStoreIdsOverride?: string[]
-    modelOpts: Record<string, unknown>
-  }> {
+  ): Promise<ResolvedModelConfig> {
     const modelId = opts.modelId ?? (chat['modelId'] as string | undefined)
     if (!modelId) {
-      return { modelOpts: this._buildModelOpts(chat, opts) }
+      return { modelOpts: this._buildModelOpts(chat, opts), toolIds: [] }
     }
     try {
       const aiModel = await this._db.getAiModel(modelId)
-      if (!aiModel) return { modelOpts: this._buildModelOpts(chat, opts) }
+      if (!aiModel) return { modelOpts: this._buildModelOpts(chat, opts), toolIds: [] }
 
       // If model points to an agent, load the agent config
       if (aiModel['type'] === 'agent' && aiModel['agentId']) {
         const agent = await this._db.getAgent(aiModel['agentId'] as string)
         if (agent) {
+          const deploymentName = (agent['deploymentName'] as string | null) ?? null
+          const providerModel =
+            deploymentName ||
+            (agent['providerModel'] as string | null) ||
+            opts.model ||
+            (chat['model'] as string | undefined)
           return {
             systemPromptOverride: agent['systemPrompt'] as string,
             knowledgeStoreIdsOverride: (agent['knowledgeStoreIds'] as string[]) ?? [],
+            toolIds: (agent['toolIds'] as string[]) ?? [],
+            providerOverride: (agent['provider'] as string | undefined) ?? undefined,
             modelOpts: {
-              model: (agent['providerModel'] as string) ?? opts.model ?? chat['model'] ?? undefined,
+              model: providerModel ?? undefined,
               temperature: (agent['temperature'] as number | null) ?? opts.temperature,
               maxTokens: (agent['maxTokens'] as number | null) ?? opts.maxTokens,
             },
@@ -457,18 +576,244 @@ class ChatService {
         }
       }
 
+      const deploymentName = (aiModel['deploymentName'] as string | null) ?? null
+      const providerModel =
+        deploymentName ||
+        (aiModel['providerModel'] as string | null) ||
+        opts.model ||
+        (chat['model'] as string | undefined)
       return {
         systemPromptOverride: (aiModel['systemPrompt'] as string | null) ?? undefined,
         knowledgeStoreIdsOverride: (aiModel['knowledgeStoreIds'] as string[]) ?? undefined,
+        toolIds: (aiModel['toolIds'] as string[]) ?? [],
+        providerOverride: (aiModel['provider'] as string | undefined) ?? undefined,
         modelOpts: {
-          model: (aiModel['providerModel'] as string) ?? opts.model ?? chat['model'] ?? undefined,
+          model: providerModel ?? undefined,
           temperature: (aiModel['temperature'] as number | null) ?? opts.temperature,
           maxTokens: (aiModel['maxTokens'] as number | null) ?? opts.maxTokens,
         },
       }
     } catch {
-      return { modelOpts: this._buildModelOpts(chat, opts) }
+      return { modelOpts: this._buildModelOpts(chat, opts), toolIds: [] }
     }
+  }
+
+  private async _runWithTools(
+    provider: ModelProviderBase,
+    baseMessages: ModelChatMessage[],
+    resolved: ResolvedModelConfig,
+  ): Promise<ChatResult> {
+    if (!resolved.toolIds.length) {
+      return provider.chat(baseMessages, resolved.modelOpts)
+    }
+
+    const tools = await this._resolveTools(resolved.toolIds)
+    if (!tools.length) {
+      return provider.chat(baseMessages, resolved.modelOpts)
+    }
+
+    if (provider.supportsTools()) {
+      return this._runNativeToolLoop(provider, baseMessages, resolved.modelOpts, tools)
+    }
+    return this._runPromptToolLoop(provider, baseMessages, resolved.modelOpts, tools)
+  }
+
+  private async _resolveTools(toolIds: string[]): Promise<ToolEntity[]> {
+    const found: ToolEntity[] = []
+    for (const toolId of toolIds) {
+      const tool = await this._db.getTool(toolId)
+      if (!tool || tool['enabled'] === false) continue
+      found.push({
+        id: tool['id'] as string,
+        name: tool['name'] as string,
+        description: (tool['description'] as string | null) ?? null,
+        type: tool['type'] as 'mcp' | 'python' | 'typescript',
+        config: (tool['config'] as Record<string, unknown>) ?? {},
+        enabled: tool['enabled'] !== false,
+      })
+    }
+    return found
+  }
+
+  private _buildToolPrompt(tools: ToolEntity[]): string {
+    const defs: ToolDefinition[] = tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? '',
+      inputSchema: (tool.config['args_schema'] as Record<string, unknown> | undefined) ?? {
+        type: 'object',
+        properties: {},
+      },
+    }))
+
+    return [
+      'You can use tools when needed.',
+      'If you need a tool, respond ONLY with valid JSON in this format:',
+      '{"tool_calls":[{"name":"<tool-name>","arguments":{...}}]}',
+      'When you are ready to answer the user directly, respond with normal text.',
+      'Available tools:',
+      JSON.stringify(defs, null, 2),
+    ].join('\n')
+  }
+
+  private _extractToolCalls(raw: string): ToolCall[] {
+    const trimmed = raw.trim()
+    let candidate = trimmed
+
+    const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+    if (fenced && fenced[1]) candidate = fenced[1].trim()
+
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>
+      const calls = Array.isArray(parsed['tool_calls']) ? parsed['tool_calls'] : []
+      return calls
+        .map((c, idx) => {
+          const call = c as Record<string, unknown>
+          const name = typeof call['name'] === 'string' ? call['name'] : ''
+          const args =
+            call['arguments'] && typeof call['arguments'] === 'object'
+              ? (call['arguments'] as Record<string, unknown>)
+              : {}
+          if (!name) return null
+          return {
+            id: `tool_${idx + 1}`,
+            name,
+            arguments: args,
+          }
+        })
+        .filter((v): v is ToolCall => v !== null)
+    } catch {
+      return []
+    }
+  }
+
+  private async _runNativeToolLoop(
+    provider: ModelProviderBase,
+    baseMessages: ModelChatMessage[],
+    modelOpts: Record<string, unknown>,
+    tools: ToolEntity[],
+  ): Promise<ChatResult> {
+    if (!this._toolExecutionService) {
+      throw Object.assign(new Error('Tool execution service is unavailable'), { status: 500 })
+    }
+
+    const toolByName = new Map(tools.map((t) => [t.name.toLowerCase(), t]))
+    const toolDefs: ToolDefinition[] = tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? '',
+      inputSchema: (tool.config['args_schema'] as Record<string, unknown> | undefined) ?? {
+        type: 'object',
+        properties: {},
+      },
+    }))
+
+    const messages: ModelChatMessage[] = [...baseMessages]
+    const optsWithTools = { ...modelOpts, tools: toolDefs }
+
+    for (let i = 0; i < 6; i += 1) {
+      const result = await provider.chat(messages, optsWithTools)
+
+      if (!result.toolCalls?.length) {
+        return result
+      }
+
+      // Add assistant message with tool calls
+      messages.push({
+        role: 'assistant',
+        content: result.content || '',
+        toolCalls: result.toolCalls,
+      })
+
+      // Execute each tool call and add results
+      for (const call of result.toolCalls) {
+        const tool = toolByName.get(call.name.toLowerCase())
+        let output: string
+        if (!tool) {
+          output = JSON.stringify({ ok: false, error: `Unknown tool: ${call.name}` })
+        } else {
+          try {
+            const result = await this._toolExecutionService!.executeTool(tool, call.arguments)
+            output = typeof result === 'string' ? result : JSON.stringify(result)
+          } catch (err) {
+            output = JSON.stringify({ ok: false, error: (err as Error).message })
+          }
+        }
+
+        messages.push({
+          role: 'tool',
+          content: output,
+          toolCallId: call.id,
+        })
+      }
+    }
+
+    throw Object.assign(new Error('Tool loop exceeded maximum iterations'), { status: 502 })
+  }
+
+  private async _runPromptToolLoop(
+    provider: ModelProviderBase,
+    baseMessages: ModelChatMessage[],
+    modelOpts: Record<string, unknown>,
+    tools: ToolEntity[],
+  ): Promise<ChatResult> {
+    if (!this._toolExecutionService) {
+      throw Object.assign(new Error('Tool execution service is unavailable'), { status: 500 })
+    }
+
+    const toolByName = new Map(tools.map((t) => [t.name.toLowerCase(), t]))
+    const messages: ModelChatMessage[] = [...baseMessages]
+    const toolPrompt = this._buildToolPrompt(tools)
+
+    if (messages[0]?.role === 'system') {
+      messages[0] = {
+        ...messages[0],
+        content: `${messages[0].content}\n\n${toolPrompt}`,
+      }
+    } else {
+      messages.unshift({ role: 'system', content: toolPrompt })
+    }
+
+    for (let i = 0; i < 6; i += 1) {
+      const result = await provider.chat(messages, modelOpts)
+      const toolCalls = this._extractToolCalls(result.content)
+      if (!toolCalls.length) {
+        return result
+      }
+
+      const executed: Array<Record<string, unknown>> = []
+      for (const call of toolCalls) {
+        const tool = toolByName.get(call.name.toLowerCase())
+        if (!tool) {
+          executed.push({
+            tool: call.name,
+            ok: false,
+            error: `Unknown tool: ${call.name}`,
+          })
+          continue
+        }
+
+        try {
+          const output = await this._toolExecutionService.executeTool(tool, call.arguments)
+          executed.push({ tool: tool.name, ok: true, output })
+        } catch (err) {
+          executed.push({
+            tool: tool.name,
+            ok: false,
+            error: (err as Error).message,
+          })
+        }
+      }
+
+      messages.push({ role: 'assistant', content: result.content })
+      messages.push({
+        role: 'user',
+        content:
+          'Tool results (JSON):\n' +
+          JSON.stringify(executed, null, 2) +
+          '\n\nNow continue and answer the user directly.',
+      })
+    }
+
+    throw Object.assign(new Error('Tool loop exceeded maximum iterations'), { status: 502 })
   }
 
   private async _assertExists(id: string): Promise<Entity> {

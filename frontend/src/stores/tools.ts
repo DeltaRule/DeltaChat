@@ -50,5 +50,22 @@ export const useToolsStore = defineStore('tools', () => {
     }
   }
 
-  return { tools, loadTools, createTool, updateTool, deleteTool }
+  async function executeTool(id: string, args: Record<string, unknown>): Promise<unknown> {
+    try {
+      const { data } = await api.post<unknown>(`/tools/${id}/execute`, { args })
+      return data
+    } catch (e: unknown) {
+      useNotificationStore().error(getErrorMessage(e, 'Failed to execute tool'))
+      throw e
+    }
+  }
+
+  return {
+    tools,
+    loadTools,
+    createTool,
+    updateTool,
+    deleteTool,
+    executeTool,
+  }
 })

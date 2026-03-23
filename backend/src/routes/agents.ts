@@ -38,6 +38,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       systemPrompt: body['systemPrompt'] ?? '',
       provider: body['provider'] ?? null,
       providerModel: body['providerModel'] ?? null,
+      deploymentName: body['deploymentName'] ?? null,
       knowledgeStoreIds: body['knowledgeStoreIds'] ?? [],
       toolIds: body['toolIds'] ?? [],
       temperature: body['temperature'] ?? null,

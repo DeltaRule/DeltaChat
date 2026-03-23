@@ -146,6 +146,7 @@
 }
 
 /* ── Custom scrollbars ───────────────────────────────────────── */
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -163,6 +164,12 @@
 * {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--color-primary) 25%, transparent) transparent;
+}
+
+/* Keep backend/API error toasts above app chrome and side panels. */
+[data-sonner-toaster] {
+  position: fixed !important;
+  z-index: 2147483647 !important;
 }
 
 /* ── Animations ──────────────────────────────────────────────── */

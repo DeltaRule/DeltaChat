@@ -4,6 +4,7 @@ export interface FunctionDef {
   name: string
   description?: string
   parameters?: Record<string, unknown>
+  inputSchema?: Record<string, unknown>
   handler?: (args: Record<string, unknown>) => unknown
   docker?: {
     image: string
@@ -11,6 +12,13 @@ export interface FunctionDef {
     env?: Record<string, string>
     timeout?: number
     memoryMb?: number
+  }
+  pythonServer?: {
+    baseUrl: string
+    toolName?: string
+    authToken?: string
+    timeout?: number
+    endpointPath?: string
   }
 }
 

@@ -8,7 +8,10 @@ import logger from './logger'
 import ChatService from './services/ChatService'
 import KnowledgeService from './services/KnowledgeService'
 import WebhookService from './services/WebhookService'
+import McpService from './services/McpService'
+import { ToolExecutionService } from './services/ToolExecutionService'
 import { getAuthService } from './services/AuthService'
+import { getAdapter } from './db/DeltaDatabaseAdapter'
 
 const server = http.createServer(app)
 
@@ -64,6 +67,21 @@ io.on('connection', (socket) => {
     const chatService = new ChatService()
     chatService.setKnowledgeService(knowledgeService)
     const webhookService = new WebhookService()
+    const mcpService = new McpService()
+
+    // Wire up tool execution so models with tools work over WebSocket
+    try {
+      const db = getAdapter()
+      const settings = (await db.getSettings()) as Record<string, unknown>
+      const executorsConfig = (settings['executors'] as Record<string, unknown>) || {}
+      const toolExecutionService = new ToolExecutionService(mcpService, {
+        python: executorsConfig['python'] as any,
+        typescript: executorsConfig['typescript'] as any,
+      })
+      chatService.setToolExecutionService(toolExecutionService)
+    } catch (e) {
+      logger.warn('[WS] Failed to initialise ToolExecutionService:', e)
+    }
 
     // Verify ownership before streaming
     const socketUser = (socket as any).user
@@ -107,8 +125,6 @@ io.on('connection', (socket) => {
     logger.debug(`[WS] Client disconnected: ${socket.id}`)
   })
 })
-
-import { getAdapter } from './db/DeltaDatabaseAdapter'
 
 // ── Start ──────────────────────────────────────────────────────────────────
 ;(async () => {

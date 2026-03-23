@@ -2,6 +2,7 @@ import type ChatService from '../services/ChatService'
 import type KnowledgeService from '../services/KnowledgeService'
 import type WebhookService from '../services/WebhookService'
 import type McpService from '../services/McpService'
+import type ToolExecutionService from '../services/ToolExecutionService'
 
 declare global {
   namespace Express {
@@ -11,6 +12,7 @@ declare global {
         knowledgeService: KnowledgeService
         webhookService: WebhookService
         mcpService: McpService
+        toolExecutionService: ToolExecutionService
       }
       user?: {
         id: string

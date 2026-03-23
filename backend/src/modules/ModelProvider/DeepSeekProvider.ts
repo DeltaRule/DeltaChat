@@ -4,25 +4,26 @@ import OpenAI from 'openai'
 import ModelProviderBase, { ChatMessage, ChatResult, ModelOptions } from './ModelProviderBase'
 import config from '../../config'
 
-interface OpenAIProviderOpts {
+interface DeepSeekProviderOpts {
   apiKey?: string
   defaultModel?: string
 }
 
-class OpenAIProvider extends ModelProviderBase {
+class DeepSeekProvider extends ModelProviderBase {
   private _client: OpenAI
   private _defaultModel: string
 
-  constructor(opts: OpenAIProviderOpts = {}) {
+  constructor(opts: DeepSeekProviderOpts = {}) {
     super()
     this._client = new OpenAI({
-      apiKey: opts.apiKey ?? config.openai.apiKey,
+      apiKey: opts.apiKey ?? config.deepseek.apiKey,
+      baseURL: 'https://api.deepseek.com/v1',
     })
-    this._defaultModel = opts.defaultModel ?? config.openai.defaultModel
+    this._defaultModel = opts.defaultModel ?? config.deepseek.defaultModel
   }
 
   getName(): string {
-    return 'openai'
+    return 'deepseek'
   }
 
   supportsTools(): boolean {
@@ -30,41 +31,17 @@ class OpenAIProvider extends ModelProviderBase {
   }
 
   async getModels(): Promise<string[]> {
-    const list = await this._client.models.list()
-    return list.data
-      .filter((m) => m.id.startsWith('gpt'))
-      .map((m) => m.id)
-      .sort()
-  }
-
-  private _mapMessages(
-    messages: ChatMessage[],
-  ): import('openai/resources/chat').ChatCompletionMessageParam[] {
-    return messages.map((m) => {
-      if (m.role === 'tool' && m.toolCallId) {
-        return { role: 'tool' as const, content: m.content, tool_call_id: m.toolCallId }
-      }
-      if (m.role === 'assistant' && m.toolCalls?.length) {
-        return {
-          role: 'assistant' as const,
-          content: m.content || null,
-          tool_calls: m.toolCalls.map((tc) => ({
-            id: tc.id,
-            type: 'function' as const,
-            function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
-          })),
-        }
-      }
-      return {
-        role: m.role,
-        content: m.content,
-      } as import('openai/resources/chat').ChatCompletionMessageParam
-    })
+    try {
+      const list = await this._client.models.list()
+      return list.data.map((m) => m.id).sort()
+    } catch {
+      return ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner']
+    }
   }
 
   async chat(messages: ChatMessage[], options: ModelOptions = {}): Promise<ChatResult> {
     const model = options.model ?? this._defaultModel
-    const msgParams = this._mapMessages(messages)
+    const msgParams = messages as import('openai/resources/chat').ChatCompletionMessageParam[]
     const response = await this._client.chat.completions.create({
       model,
       messages: msgParams,
@@ -119,7 +96,7 @@ class OpenAIProvider extends ModelProviderBase {
 
   async *stream(messages: ChatMessage[], options: ModelOptions = {}): AsyncGenerator<string> {
     const model = options.model ?? this._defaultModel
-    const msgParams = this._mapMessages(messages)
+    const msgParams = messages as import('openai/resources/chat').ChatCompletionMessageParam[]
     const stream = await this._client.chat.completions.create({
       model,
       messages: msgParams,
@@ -135,4 +112,4 @@ class OpenAIProvider extends ModelProviderBase {
   }
 }
 
-export default OpenAIProvider
+export default DeepSeekProvider

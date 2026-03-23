@@ -23,6 +23,7 @@ export interface AiModel {
   type: 'chat' | 'model' | 'embedding' | 'agent' | 'webhook'
   provider: string
   providerModel: string
+  deploymentName?: string
   systemPrompt?: string
   temperature?: number
   knowledgeStoreIds?: string[]
@@ -44,6 +45,7 @@ export interface Agent {
   description?: string
   provider?: string
   providerModel?: string
+  deploymentName?: string
   systemPrompt?: string
   knowledgeStoreIds?: string[]
   toolIds?: string[]
@@ -51,15 +53,36 @@ export interface Agent {
   _sharedWithMe?: boolean
 }
 
+export type ToolType = 'mcp' | 'python' | 'typescript'
+
 export interface Tool {
   id: string
   name: string
   description?: string
-  type: string
+  type: ToolType | string
   config?: Record<string, unknown>
   enabled?: boolean
   ownerId?: string
   _sharedWithMe?: boolean
+}
+
+export interface RuntimeExecutorSettings {
+  mode?: 'spawn' | 'sandbox'
+  timeout?: number
+}
+
+export interface PythonExecutorSettings extends RuntimeExecutorSettings {
+  pythonPath?: string
+}
+
+export interface TypeScriptExecutorSettings extends RuntimeExecutorSettings {
+  nodePath?: string
+}
+
+export interface ExecutorsSettings {
+  enabled?: Record<string, boolean>
+  python?: PythonExecutorSettings
+  typescript?: TypeScriptExecutorSettings
 }
 
 export interface Chat {
@@ -138,8 +161,16 @@ export interface SettingsData {
 
 // ── Provider settings types for SettingsPanel ──
 
-export type VectorStoreType = 'local' | 'chroma'
-export type DocProcessorType = 'langchain' | 'tika' | 'docling'
+export type VectorStoreType =
+  | 'local'
+  | 'chroma'
+  | 'pinecone'
+  | 'qdrant'
+  | 'weaviate'
+  | 'milvus'
+  | 'pgvector'
+export type DocProcessorType = 'langchain' | 'tika' | 'docling' | 'unstructured'
+export type BinaryStorageType = 'local' | 's3' | 'azure' | 'gcs'
 
 export interface VectorStoreAvailability {
   local: boolean

@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full overflow-hidden">
+  <div class="flex w-full h-full overflow-hidden">
     <!-- Settings sidebar (ShadCN Sidebar) -->
     <Sidebar collapsible="icon">
       <SidebarHeader class="flex items-center px-3 h-12">
@@ -28,16 +28,20 @@
     </Sidebar>
 
     <!-- Content area -->
-    <SidebarInset class="min-h-0">
-      <ScrollArea class="flex-1 h-full">
-        <div class="p-6 max-w-4xl">
+    <SidebarInset class="min-h-0 min-w-0">
+      <div class="flex-1 h-full overflow-y-auto">
+        <div class="p-6">
           <!-- ── Model Providers ────────────────────────── -->
           <template v-if="activeTab === 'providers'">
             <h2 class="text-xl font-bold mb-5 pb-3 border-b-2 border-primary/15">
               Model Providers
             </h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card v-for="provider in providers" :key="provider.key">
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+              <Card
+                v-for="provider in providers"
+                :key="provider.key"
+                :class="{ 'opacity-50': !providerEnabled[provider.key] }"
+              >
                 <CardHeader class="!flex !flex-row !items-center gap-3 pb-3">
                   <div
                     :class="[
@@ -80,6 +84,16 @@
                       :placeholder="provider.urlLabel || 'Base URL'"
                     />
                   </div>
+                  <div v-if="provider.key === 'azure'">
+                    <Label class="mb-1.5 block text-xs">API Version</Label>
+                    <Input
+                      v-model="providerApiVersions.azure"
+                      placeholder="e.g. 2024-04-01-preview"
+                    />
+                    <p class="mt-1 text-[11px] text-muted-foreground">
+                      Azure model execution uses deployment name from the model/agent form.
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -103,8 +117,8 @@
                   <TabsTrigger value="embedding"> Embedding </TabsTrigger>
                 </TabsList>
               </Tabs>
-              <div class="flex-1" />
               <Button
+                class="ml-auto"
                 size="sm"
                 @click="openModelDialog(null, modelSubTab === 'embedding' ? 'embedding' : 'model')"
               >
@@ -311,8 +325,12 @@
               stores.
             </p>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card v-for="vs in vectorStoreProviders" :key="vs.key">
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+              <Card
+                v-for="vs in vectorStoreProviders"
+                :key="vs.key"
+                :class="{ 'opacity-50': !vectorStoreEnabled[vs.key] }"
+              >
                 <CardHeader class="!flex !flex-row !items-center gap-3 pb-3">
                   <Tooltip :delay-duration="200">
                     <TooltipTrigger as-child>
@@ -359,11 +377,22 @@
                     @update:model-value="vectorStoreEnabled[vs.key] = $event"
                   />
                 </CardHeader>
-                <CardContent v-if="vectorStoreEnabled[vs.key] && vs.hasUrl" class="space-y-3">
+                <CardContent
+                  v-if="vectorStoreEnabled[vs.key] && (vs.hasUrl || vs.hasApiKey)"
+                  class="space-y-3"
+                >
                   <Separator />
-                  <div>
+                  <div v-if="vs.hasUrl">
                     <Label class="mb-1.5 block text-xs">{{ vs.urlLabel }}</Label>
                     <Input v-model="vectorStoreUrls[vs.key]" :placeholder="vs.urlPlaceholder" />
+                  </div>
+                  <div v-if="vs.hasApiKey">
+                    <Label class="mb-1.5 block text-xs">{{ vs.keyLabel || 'API Key' }}</Label>
+                    <Input
+                      v-model="vectorStoreApiKeys[vs.key]"
+                      type="password"
+                      placeholder="Enter API key…"
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -388,8 +417,12 @@
               Configure available document processors and set the default for new knowledge stores.
             </p>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card v-for="dp in docProcessorProviders" :key="dp.key">
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+              <Card
+                v-for="dp in docProcessorProviders"
+                :key="dp.key"
+                :class="{ 'opacity-50': !docProcessorEnabled[dp.key] }"
+              >
                 <CardHeader class="!flex !flex-row !items-center gap-3 pb-3">
                   <Tooltip :delay-duration="200">
                     <TooltipTrigger as-child>
@@ -462,7 +495,7 @@
                 <Plus class="h-4 w-4 mr-2" />New Store
               </Button>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4">
+            <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4 w-full">
               <div>
                 <div
                   v-if="!knowledgeStore.knowledgeStores.length"
@@ -684,7 +717,7 @@
               </Button>
             </div>
             <p class="text-sm text-muted-foreground mb-4">
-              Connect tools via MCP, or define custom Python / TypeScript functions.
+              Connect tools via MCP, or configure Python server and local function tools.
             </p>
 
             <div
@@ -694,7 +727,7 @@
               <Wrench class="h-16 w-16 text-muted-foreground/25 mb-4" />
               <h3 class="text-lg font-semibold mb-2">No tools yet</h3>
               <p class="text-sm text-muted-foreground mb-6 max-w-[340px]">
-                Add MCP tool servers or define custom functions.
+                Add MCP, Python, or TypeScript tools.
               </p>
               <Button @click="openToolDialog()"> <Plus class="h-4 w-4 mr-2" />New Tool </Button>
             </div>
@@ -750,6 +783,97 @@
                 </div>
               </div>
             </Card>
+          </template>
+
+          <!-- ── Executors ─────────────────────────────── -->
+          <template v-else-if="activeTab === 'executors'">
+            <h2 class="text-xl font-bold mb-5 pb-3 border-b-2 border-primary/15">Executors</h2>
+            <p class="text-sm text-muted-foreground mb-4">
+              Configure global function executor defaults used by executable tools.
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle class="text-sm">Python Executor</CardTitle>
+                </CardHeader>
+                <CardContent class="space-y-3">
+                  <div>
+                    <Label class="mb-1.5 block text-xs">Mode</Label>
+                    <Select v-model="pythonExecutorMode">
+                      <SelectTrigger><SelectValue placeholder="Select mode…" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sandbox">sandbox</SelectItem>
+                        <SelectItem value="spawn">spawn</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label class="mb-1.5 block text-xs">Python Path</Label>
+                    <Input v-model="pythonExecutorPath" placeholder="python3" />
+                  </div>
+                  <div>
+                    <Label class="mb-1.5 block text-xs">Default Timeout (ms)</Label>
+                    <Input
+                      v-model.number="pythonExecutorTimeout"
+                      type="number"
+                      placeholder="30000"
+                    />
+                  </div>
+                  <div>
+                    <Label class="mb-1.5 block text-xs">Max Output Bytes</Label>
+                    <Input
+                      v-model.number="pythonExecutorMaxOutputBytes"
+                      type="number"
+                      placeholder="1048576"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle class="text-sm">TypeScript Executor</CardTitle>
+                </CardHeader>
+                <CardContent class="space-y-3">
+                  <div>
+                    <Label class="mb-1.5 block text-xs">Mode</Label>
+                    <Select v-model="typescriptExecutorMode">
+                      <SelectTrigger><SelectValue placeholder="Select mode…" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sandbox">sandbox</SelectItem>
+                        <SelectItem value="spawn">spawn</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label class="mb-1.5 block text-xs">Node Path</Label>
+                    <Input v-model="typescriptExecutorPath" placeholder="node" />
+                  </div>
+                  <div>
+                    <Label class="mb-1.5 block text-xs">Default Timeout (ms)</Label>
+                    <Input
+                      v-model.number="typescriptExecutorTimeout"
+                      type="number"
+                      placeholder="30000"
+                    />
+                  </div>
+                  <div>
+                    <Label class="mb-1.5 block text-xs">Max Output Bytes</Label>
+                    <Input
+                      v-model.number="typescriptExecutorMaxOutputBytes"
+                      type="number"
+                      placeholder="1048576"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            <div class="mt-4">
+              <Button class="w-full md:w-auto" :disabled="saving" @click="saveExecutorSettings">
+                <Save class="h-4 w-4 mr-2" />Save Executor Settings
+              </Button>
+            </div>
           </template>
 
           <!-- ── Appearance ─────────────────────────────── -->
@@ -814,7 +938,7 @@
             </Card>
           </template>
         </div>
-      </ScrollArea>
+      </div>
 
       <!-- ── Dialogs ───────────────────────────────────── -->
 
@@ -868,6 +992,13 @@
                     modelForm.type === 'embedding' ? 'e.g. nomic-embed-text' : 'e.g. gpt-4o'
                   "
                 />
+              </div>
+              <div v-if="modelForm.provider === 'azure'">
+                <Label class="mb-1.5 block text-xs">Azure Deployment Name</Label
+                ><Input v-model="modelForm.deploymentName" placeholder="e.g. gpt-4o-mini-prod" />
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  This is the Azure deployment identifier, not the base model family.
+                </p>
               </div>
               <template v-if="modelForm.type === 'embedding'">
                 <Separator />
@@ -926,6 +1057,25 @@
                         @update:checked="toggleModelKs(ks.id)"
                       />
                       <span class="text-xs">{{ ks.name }}</span>
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <Label class="mb-1.5 block text-xs">Tools</Label>
+                  <div class="max-h-32 overflow-y-auto space-y-1.5 rounded-md border p-2">
+                    <div v-if="!toolItems.length" class="text-xs text-muted-foreground py-1">
+                      No tools available
+                    </div>
+                    <label
+                      v-for="tool in toolItems"
+                      :key="tool.value"
+                      class="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-accent"
+                    >
+                      <Checkbox
+                        :checked="modelForm.toolIds.includes(tool.value)"
+                        @update:checked="toggleModelTool(tool.value)"
+                      />
+                      <span class="text-xs">{{ tool.title }}</span>
                     </label>
                   </div>
                 </div>
@@ -1007,9 +1157,54 @@
               <Label class="mb-1.5 block text-xs">Model Name</Label
               ><Input v-model="agentForm.providerModel" placeholder="Model name" />
             </div>
+            <div v-if="agentForm.provider === 'azure'">
+              <Label class="mb-1.5 block text-xs">Azure Deployment Name</Label
+              ><Input v-model="agentForm.deploymentName" placeholder="e.g. gpt-4o-mini-agent" />
+            </div>
             <div>
               <Label class="mb-1.5 block text-xs">System Prompt</Label
               ><Textarea v-model="agentForm.systemPrompt" placeholder="System prompt…" rows="4" />
+            </div>
+            <div>
+              <Label class="mb-1.5 block text-xs">Knowledge Stores</Label>
+              <div class="max-h-32 overflow-y-auto space-y-1.5 rounded-md border p-2">
+                <div
+                  v-if="!knowledgeStore.knowledgeStores.length"
+                  class="text-xs text-muted-foreground py-1"
+                >
+                  No knowledge stores available
+                </div>
+                <label
+                  v-for="ks in knowledgeStore.knowledgeStores"
+                  :key="ks.id"
+                  class="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-accent"
+                >
+                  <Checkbox
+                    :checked="agentForm.knowledgeStoreIds.includes(ks.id)"
+                    @update:checked="toggleAgentKs(ks.id)"
+                  />
+                  <span class="text-xs">{{ ks.name }}</span>
+                </label>
+              </div>
+            </div>
+            <div>
+              <Label class="mb-1.5 block text-xs">Tools</Label>
+              <div class="max-h-32 overflow-y-auto space-y-1.5 rounded-md border p-2">
+                <div v-if="!toolItems.length" class="text-xs text-muted-foreground py-1">
+                  No tools available
+                </div>
+                <label
+                  v-for="tool in toolItems"
+                  :key="tool.value"
+                  class="flex items-center gap-2 cursor-pointer rounded px-1 py-0.5 hover:bg-accent"
+                >
+                  <Checkbox
+                    :checked="agentForm.toolIds.includes(tool.value)"
+                    @update:checked="toggleAgentTool(tool.value)"
+                  />
+                  <span class="text-xs">{{ tool.title }}</span>
+                </label>
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -1021,7 +1216,7 @@
 
       <!-- Tool dialog -->
       <Dialog :open="showToolDialog" @update:open="showToolDialog = $event">
-        <DialogContent>
+        <DialogContent class="w-[95vw] max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{{ editingTool?.id ? 'Edit Tool' : 'Add Tool' }}</DialogTitle>
             <DialogDescription>Configure tool settings.</DialogDescription>
@@ -1048,8 +1243,8 @@
             </div>
             <template v-if="toolForm.type === 'mcp'">
               <div>
-                <Label class="mb-1.5 block text-xs">MCP Server URL</Label
-                ><Input v-model="toolForm.config.serverUrl" placeholder="https://..." />
+                <Label class="mb-1.5 block text-xs">MCP Connection ID</Label
+                ><Input v-model="toolForm.config.connectionId" placeholder="mcp-default" />
               </div>
               <div>
                 <Label class="mb-1.5 block text-xs">Tool Name</Label
@@ -1058,13 +1253,40 @@
             </template>
             <template v-else>
               <div>
-                <Label class="mb-1.5 block text-xs">Function Code</Label
-                ><Textarea
+                <Label class="mb-1.5 block text-xs">Function Code (inline)</Label>
+                <MonacoEditor
                   v-model="toolForm.config.code"
-                  placeholder="Code…"
-                  rows="6"
-                  class="font-mono text-xs"
+                  :language="toolForm.type === 'python' ? 'python' : 'typescript'"
+                  height="220px"
                 />
+              </div>
+              <div>
+                <Label class="mb-1.5 block text-xs">Arguments JSON Schema (draft-07)</Label>
+                <MonacoEditor
+                  v-model="toolForm.config.argsSchemaText"
+                  language="json"
+                  height="220px"
+                />
+              </div>
+              <div>
+                <Label class="mb-1.5 block text-xs">Test Args JSON</Label>
+                <MonacoEditor
+                  v-model="toolForm.config.sampleArgsJson"
+                  language="json"
+                  height="180px"
+                />
+              </div>
+              <div class="flex items-center gap-2">
+                <Button variant="outline" :disabled="toolTestRunning" @click="runToolTest">
+                  {{ toolTestRunning ? 'Running…' : 'Run Test' }}
+                </Button>
+                <span v-if="toolTestError" class="text-xs text-destructive">{{
+                  toolTestError
+                }}</span>
+              </div>
+              <div v-if="toolTestResult" class="rounded-md border bg-muted/30 p-2">
+                <Label class="mb-1.5 block text-xs">Test Result</Label>
+                <pre class="text-xs whitespace-pre-wrap break-words">{{ toolTestResult }}</pre>
               </div>
             </template>
             <div class="flex items-center justify-between">
@@ -1125,7 +1347,7 @@
               <Select v-model="newKsEmbeddingModelId">
                 <SelectTrigger><SelectValue placeholder="Select embedding model…" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem :value="null"> Use default </SelectItem>
+                  <SelectItem value="__default__"> Use default </SelectItem>
                   <SelectItem v-for="m in embeddingModels" :key="m.id" :value="m.id">
                     {{ m.name }}
                   </SelectItem>
@@ -1222,12 +1444,12 @@ import { Button } from './ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
+import MonacoEditor from './ui/monaco/MonacoEditor.vue'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select'
 import { Switch } from './ui/switch'
 import { Label } from './ui/label'
 import { Badge } from './ui/badge'
 import { Separator } from './ui/separator'
-import { ScrollArea } from './ui/scroll-area'
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip'
 import {
   Dialog,
@@ -1311,10 +1533,30 @@ const tabs = [
   { value: 'knowledge', label: 'Knowledge', icon: Database },
   { value: 'agents', label: 'Agents', icon: Bot },
   { value: 'tools', label: 'Tools', icon: Wrench },
+  { value: 'executors', label: 'Executors', icon: Zap },
   { value: 'appearance', label: 'Appearance', icon: Palette },
 ]
 
-const toolIconMap: Record<string, typeof Link> = { mcp: Link, python: Code, typescript: Code }
+const toolIconMap: Record<string, typeof Link> = {
+  mcp: Link,
+  python: Code,
+  typescript: Code,
+}
+
+const executorNames = ['mcp', 'python', 'typescript']
+const executorEnabled = reactive<Record<string, boolean>>({
+  mcp: true,
+  python: true,
+  typescript: true,
+})
+const pythonExecutorMode = ref<'spawn' | 'sandbox'>('sandbox')
+const pythonExecutorPath = ref('python3')
+const pythonExecutorTimeout = ref(30000)
+const pythonExecutorMaxOutputBytes = ref(1024 * 1024)
+const typescriptExecutorMode = ref<'spawn' | 'sandbox'>('sandbox')
+const typescriptExecutorPath = ref('node')
+const typescriptExecutorTimeout = ref(30000)
+const typescriptExecutorMaxOutputBytes = ref(1024 * 1024)
 
 // ── Provider settings ──────────────────────────────────
 const providers = [
@@ -1376,11 +1618,52 @@ const providers = [
     bgClass: 'bg-cyan-500/10',
     description: 'OpenAI on Azure',
   },
+  {
+    key: 'mistral',
+    name: 'Mistral AI',
+    keyLabel: 'API Key',
+    icon: Brain,
+    iconClass: 'text-orange-500',
+    bgClass: 'bg-orange-500/10',
+    description: 'Mistral Large, Medium, Small',
+  },
+  {
+    key: 'deepseek',
+    name: 'DeepSeek',
+    keyLabel: 'API Key',
+    icon: Brain,
+    iconClass: 'text-indigo-500',
+    bgClass: 'bg-indigo-500/10',
+    description: 'DeepSeek Chat and Coder models',
+  },
+  {
+    key: 'cohere',
+    name: 'Cohere',
+    keyLabel: 'API Key',
+    icon: Brain,
+    iconClass: 'text-rose-500',
+    bgClass: 'bg-rose-500/10',
+    description: 'Command R+, Command R',
+  },
+  {
+    key: 'huggingface',
+    name: 'HuggingFace',
+    keyLabel: 'API Key',
+    hasUrl: true,
+    urlLabel: 'Base URL',
+    icon: Bot,
+    iconClass: 'text-yellow-600',
+    bgClass: 'bg-yellow-600/10',
+    description: 'HuggingFace Inference API',
+  },
 ]
 
 const providerEnabled = reactive<Record<string, boolean>>({})
 const providerKeys = reactive<Record<string, string>>({})
 const providerUrls = reactive<Record<string, string>>({})
+const providerApiVersions = reactive<Record<string, string>>({
+  azure: '2024-04-01-preview',
+})
 const showKey = reactive<Record<string, boolean>>({})
 providers.forEach((p) => {
   providerEnabled[p.key] = false
@@ -1396,7 +1679,11 @@ const defaultEmbeddingModelId = ref<string | null>(null)
 
 const embeddingModels = computed(() => modelsStore.aiModels.filter((m) => m.type === 'embedding'))
 const generalModels = computed(() => modelsStore.aiModels.filter((m) => m.type !== 'embedding'))
-const embeddingProviderKeys = computed(() => ['openai', 'ollama'].filter((k) => providerEnabled[k]))
+const embeddingProviderKeys = computed(() =>
+  ['openai', 'ollama', 'gemini', 'cohere', 'azure', 'mistral', 'huggingface'].filter(
+    (k) => providerEnabled[k],
+  ),
+)
 
 const providerKeys_list = computed(() =>
   providers.filter((p) => providerEnabled[p.key]).map((p) => p.key),
@@ -1423,9 +1710,90 @@ const vectorStoreProviders = [
     urlLabel: 'Chroma URL',
     urlPlaceholder: 'http://localhost:8000',
   },
+  {
+    key: 'pinecone',
+    name: 'Pinecone',
+    icon: Database,
+    iconClass: 'text-teal-500',
+    bgClass: 'bg-teal-500/10',
+    description: 'Managed vector database in the cloud',
+    hasApiKey: true,
+    keyLabel: 'API Key',
+  },
+  {
+    key: 'qdrant',
+    name: 'Qdrant',
+    icon: Database,
+    iconClass: 'text-red-500',
+    bgClass: 'bg-red-500/10',
+    description: 'High-performance vector search engine',
+    hasUrl: true,
+    urlLabel: 'Qdrant URL',
+    urlPlaceholder: 'http://localhost:6333',
+    hasApiKey: true,
+    keyLabel: 'API Key (optional)',
+  },
+  {
+    key: 'weaviate',
+    name: 'Weaviate',
+    icon: Database,
+    iconClass: 'text-green-600',
+    bgClass: 'bg-green-600/10',
+    description: 'AI-native vector database',
+    hasUrl: true,
+    urlLabel: 'Weaviate URL',
+    urlPlaceholder: 'http://localhost:8080',
+    hasApiKey: true,
+    keyLabel: 'API Key (optional)',
+  },
+  {
+    key: 'milvus',
+    name: 'Milvus',
+    icon: Database,
+    iconClass: 'text-blue-600',
+    bgClass: 'bg-blue-600/10',
+    description: 'Scalable vector database for AI',
+    hasUrl: true,
+    urlLabel: 'Milvus Address',
+    urlPlaceholder: 'localhost:19530',
+    hasApiKey: true,
+    keyLabel: 'Token (optional)',
+  },
+  {
+    key: 'pgvector',
+    name: 'pgvector (PostgreSQL)',
+    icon: Database,
+    iconClass: 'text-slate-500',
+    bgClass: 'bg-slate-500/10',
+    description: 'PostgreSQL with vector extension',
+    hasUrl: true,
+    urlLabel: 'Connection String',
+    urlPlaceholder: 'postgresql://user:pass@localhost:5432/db',
+  },
 ]
-const vectorStoreEnabled = reactive<Record<string, boolean>>({ local: true, chroma: false })
-const vectorStoreUrls = reactive<Record<string, string>>({ chroma: '' })
+const vectorStoreEnabled = reactive<Record<string, boolean>>({
+  local: true,
+  chroma: false,
+  pinecone: false,
+  qdrant: false,
+  weaviate: false,
+  milvus: false,
+  pgvector: false,
+})
+const vectorStoreUrls = reactive<Record<string, string>>({
+  chroma: '',
+  pinecone: '',
+  qdrant: '',
+  weaviate: '',
+  milvus: '',
+  pgvector: '',
+})
+const vectorStoreApiKeys = reactive<Record<string, string>>({
+  pinecone: '',
+  qdrant: '',
+  weaviate: '',
+  milvus: '',
+})
 const defaultVectorStoreType = ref<string | null>('local')
 const enabledVectorStores = computed(() =>
   vectorStoreProviders.filter((vs) => vectorStoreEnabled[vs.key]),
@@ -1463,20 +1831,36 @@ const docProcessorProviders = [
     urlLabel: 'Docling URL',
     urlPlaceholder: 'http://localhost:5001',
   },
+  {
+    key: 'unstructured',
+    name: 'Unstructured',
+    icon: FileSearch,
+    iconClass: 'text-violet-500',
+    bgClass: 'bg-violet-500/10',
+    description: 'All-in-one document extraction via Unstructured.io',
+    hasUrl: true,
+    urlLabel: 'Unstructured URL',
+    urlPlaceholder: 'http://localhost:8000',
+  },
 ]
 const docProcessorEnabled = reactive<Record<string, boolean>>({
   langchain: true,
   tika: false,
   docling: false,
+  unstructured: false,
 })
-const docProcessorUrls = reactive<Record<string, string>>({ tika: '', docling: '' })
+const docProcessorUrls = reactive<Record<string, string>>({
+  tika: '',
+  docling: '',
+  unstructured: '',
+})
 const defaultDocProcessorType = ref<string | null>('langchain')
 const enabledDocProcessors = computed(() =>
   docProcessorProviders.filter((dp) => docProcessorEnabled[dp.key]),
 )
 
 // ── Knowledge store creation form defaults (must be declared before watcher) ──
-const newKsEmbeddingModelId = ref<string | null>(null)
+const newKsEmbeddingModelId = ref<string>('__default__')
 const newKsVectorStoreType = ref('local')
 const newKsVectorStoreUrl = ref('')
 const newKsDocProcessorType = ref('langchain')
@@ -1506,6 +1890,9 @@ watch(
       providerEnabled[p.key] = s[p.key]?.enabled || false
       providerKeys[p.key] = s[p.key]?.apiKey || ''
       providerUrls[p.key] = s[p.key]?.baseUrl || ''
+      if (p.key === 'azure') {
+        providerApiVersions.azure = s[p.key]?.apiVersion || providerApiVersions.azure
+      }
     })
     // Model defaults
     if (s.defaultModelId !== undefined) defaultModelId.value = s.defaultModelId
@@ -1517,6 +1904,8 @@ watch(
         if (s.vectorStores[vs.key] !== undefined) {
           vectorStoreEnabled[vs.key] = s.vectorStores[vs.key].enabled !== false
           if (s.vectorStores[vs.key].url) vectorStoreUrls[vs.key] = s.vectorStores[vs.key].url
+          if (s.vectorStores[vs.key].apiKey)
+            vectorStoreApiKeys[vs.key] = s.vectorStores[vs.key].apiKey
         }
       })
     } else if (s.defaultVectorStoreConfig) {
@@ -1548,8 +1937,43 @@ watch(
       defaultDocProcessorType.value = s.defaultDocumentProcessorType
     else if (s.defaultDocumentProcessorConfig?.type)
       defaultDocProcessorType.value = s.defaultDocumentProcessorConfig.type
+
+    // Executor settings
+    if (s.executors?.enabled) {
+      executorNames.forEach((name) => {
+        if (typeof s.executors.enabled[name] === 'boolean') {
+          executorEnabled[name] = s.executors.enabled[name]
+        }
+      })
+    }
+    if (s.executors?.python?.mode === 'spawn' || s.executors?.python?.mode === 'sandbox') {
+      pythonExecutorMode.value = s.executors.python.mode
+    }
+    if (s.executors?.python?.pythonPath) {
+      pythonExecutorPath.value = s.executors.python.pythonPath
+    }
+    if (typeof s.executors?.python?.timeout === 'number') {
+      pythonExecutorTimeout.value = s.executors.python.timeout
+    }
+    if (typeof s.executors?.python?.maxOutputBytes === 'number') {
+      pythonExecutorMaxOutputBytes.value = s.executors.python.maxOutputBytes
+    }
+
+    if (s.executors?.typescript?.mode === 'spawn' || s.executors?.typescript?.mode === 'sandbox') {
+      typescriptExecutorMode.value = s.executors.typescript.mode
+    }
+    if (s.executors?.typescript?.nodePath) {
+      typescriptExecutorPath.value = s.executors.typescript.nodePath
+    }
+    if (typeof s.executors?.typescript?.timeout === 'number') {
+      typescriptExecutorTimeout.value = s.executors.typescript.timeout
+    }
+    if (typeof s.executors?.typescript?.maxOutputBytes === 'number') {
+      typescriptExecutorMaxOutputBytes.value = s.executors.typescript.maxOutputBytes
+    }
+
     // Sync KS creation form defaults
-    newKsEmbeddingModelId.value = defaultEmbeddingModelId.value
+    newKsEmbeddingModelId.value = defaultEmbeddingModelId.value || '__default__'
     newKsVectorStoreType.value = defaultVectorStoreType.value || 'local'
     newKsVectorStoreUrl.value = vectorStoreUrls[defaultVectorStoreType.value || ''] || ''
     newKsDocProcessorType.value = defaultDocProcessorType.value || 'langchain'
@@ -1561,12 +1985,18 @@ watch(
 
 async function saveProviderSettings() {
   saving.value = true
-  const providerData: Record<string, { enabled: boolean; apiKey: string; baseUrl: string }> = {}
+  const providerData: Record<
+    string,
+    { enabled: boolean; apiKey: string; baseUrl: string; apiVersion?: string }
+  > = {}
   providers.forEach((p) => {
     providerData[p.key] = {
       enabled: providerEnabled[p.key],
       apiKey: providerKeys[p.key],
       baseUrl: providerUrls[p.key],
+    }
+    if (p.key === 'azure' && providerApiVersions.azure.trim()) {
+      providerData[p.key].apiVersion = providerApiVersions.azure.trim()
     }
   })
   try {
@@ -1618,12 +2048,19 @@ function toggleModelKs(ksId: string) {
   else modelForm.knowledgeStoreIds.push(ksId)
 }
 
+function toggleModelTool(toolId: string) {
+  const idx = modelForm.toolIds.indexOf(toolId)
+  if (idx >= 0) modelForm.toolIds.splice(idx, 1)
+  else modelForm.toolIds.push(toolId)
+}
+
 async function saveVectorStoreSettings() {
   saving.value = true
-  const vsData: Record<string, { enabled: boolean; url?: string }> = {}
+  const vsData: Record<string, { enabled: boolean; url?: string; apiKey?: string }> = {}
   vectorStoreProviders.forEach((vs) => {
     vsData[vs.key] = { enabled: vectorStoreEnabled[vs.key] }
     if (vectorStoreUrls[vs.key]) vsData[vs.key].url = vectorStoreUrls[vs.key]
+    if (vectorStoreApiKeys[vs.key]) vsData[vs.key].apiKey = vectorStoreApiKeys[vs.key]
   })
   try {
     await settingsStore.saveSettings({
@@ -1668,6 +2105,44 @@ async function saveDocProcessorSettings() {
   }
 }
 
+async function saveExecutorSettings() {
+  saving.value = true
+  try {
+    await settingsStore.saveSettings({
+      executors: {
+        enabled: { ...executorEnabled },
+        python: {
+          mode: pythonExecutorMode.value,
+          pythonPath: pythonExecutorPath.value || 'python3',
+          timeout: pythonExecutorTimeout.value || 30000,
+          maxOutputBytes: pythonExecutorMaxOutputBytes.value || 1024 * 1024,
+        },
+        typescript: {
+          mode: typescriptExecutorMode.value,
+          nodePath: typescriptExecutorPath.value || 'node',
+          timeout: typescriptExecutorTimeout.value || 30000,
+          maxOutputBytes: typescriptExecutorMaxOutputBytes.value || 1024 * 1024,
+        },
+      },
+    })
+    notify.success('Executor settings saved!')
+  } catch {
+    notify.error('Failed to save executor settings.')
+  } finally {
+    saving.value = false
+  }
+}
+
+function parseJsonObject(text: string, fallback: Record<string, unknown>): Record<string, unknown> {
+  if (!text.trim()) return fallback
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : fallback
+  } catch {
+    return fallback
+  }
+}
+
 // ── Model dialog ───────────────────────────────────
 const showModelDialog = ref(false)
 const editingModel = ref<AiModel | null>(null)
@@ -1676,6 +2151,7 @@ const modelForm = reactive({
   type: 'chat' as AiModel['type'],
   provider: null as string | null,
   providerModel: '',
+  deploymentName: '',
   systemPrompt: '',
   temperature: 0.7,
   knowledgeStoreIds: [] as string[],
@@ -1714,6 +2190,7 @@ function openModelDialog(model: AiModel | null = null, defaultType: AiModel['typ
       type: model.type || ('model' as AiModel['type']),
       provider: model.provider || null,
       providerModel: model.providerModel || '',
+      deploymentName: model.deploymentName || '',
       systemPrompt: model.systemPrompt || '',
       temperature: model.temperature ?? 0.7,
       knowledgeStoreIds: model.knowledgeStoreIds || [],
@@ -1740,6 +2217,7 @@ function openModelDialog(model: AiModel | null = null, defaultType: AiModel['typ
       type: defaultType,
       provider: firstProvider,
       providerModel: '',
+      deploymentName: '',
       systemPrompt: '',
       temperature: 0.7,
       knowledgeStoreIds: [],
@@ -1756,7 +2234,11 @@ function openModelDialog(model: AiModel | null = null, defaultType: AiModel['typ
 }
 
 async function saveModel() {
-  const payload = { ...modelForm, provider: modelForm.provider || undefined }
+  const payload = {
+    ...modelForm,
+    provider: modelForm.provider || undefined,
+    deploymentName: modelForm.deploymentName || undefined,
+  }
   try {
     if (editingModel.value?.id) {
       await modelsStore.updateModel(editingModel.value.id, payload)
@@ -1792,6 +2274,7 @@ const agentForm = reactive({
   description: '',
   provider: null as string | null,
   providerModel: '',
+  deploymentName: '',
   systemPrompt: '',
   knowledgeStoreIds: [] as string[],
   toolIds: [] as string[],
@@ -1805,6 +2288,7 @@ function openAgentDialog(agent: Agent | null = null) {
       description: agent.description || '',
       provider: agent.provider || null,
       providerModel: agent.providerModel || '',
+      deploymentName: agent.deploymentName || '',
       systemPrompt: agent.systemPrompt || '',
       knowledgeStoreIds: agent.knowledgeStoreIds || [],
       toolIds: agent.toolIds || [],
@@ -1815,6 +2299,7 @@ function openAgentDialog(agent: Agent | null = null) {
       description: '',
       provider: null,
       providerModel: '',
+      deploymentName: '',
       systemPrompt: '',
       knowledgeStoreIds: [],
       toolIds: [],
@@ -1822,8 +2307,24 @@ function openAgentDialog(agent: Agent | null = null) {
   showAgentDialog.value = true
 }
 
+function toggleAgentKs(ksId: string) {
+  const idx = agentForm.knowledgeStoreIds.indexOf(ksId)
+  if (idx >= 0) agentForm.knowledgeStoreIds.splice(idx, 1)
+  else agentForm.knowledgeStoreIds.push(ksId)
+}
+
+function toggleAgentTool(toolId: string) {
+  const idx = agentForm.toolIds.indexOf(toolId)
+  if (idx >= 0) agentForm.toolIds.splice(idx, 1)
+  else agentForm.toolIds.push(toolId)
+}
+
 async function saveAgent() {
-  const payload = { ...agentForm, provider: agentForm.provider || undefined }
+  const payload = {
+    ...agentForm,
+    provider: agentForm.provider || undefined,
+    deploymentName: agentForm.deploymentName || undefined,
+  }
   try {
     if (editingAgent.value?.id) {
       await agentsStore.updateAgent(editingAgent.value.id, payload)
@@ -1845,21 +2346,35 @@ const toolForm = reactive({
   name: '',
   description: '',
   type: 'mcp',
-  config: { serverUrl: '', toolName: '', code: '' },
+  config: {
+    connectionId: '',
+    toolName: '',
+    code: '',
+    argsSchemaText:
+      '{\n  "$schema": "http://json-schema.org/draft-07/schema#",\n  "type": "object",\n  "properties": {\n    "input": { "type": "string", "description": "Input value" }\n  },\n  "required": ["input"]\n}',
+    sampleArgsJson: '{\n  "input": "hello"\n}',
+  },
   enabled: true,
 })
+const toolTestRunning = ref(false)
+const toolTestResult = ref('')
+const toolTestError = ref('')
 
 function openToolDialog(tool: Tool | null = null) {
   editingTool.value = tool
+  toolTestResult.value = ''
+  toolTestError.value = ''
   if (tool)
     Object.assign(toolForm, {
       name: tool.name,
       description: tool.description || '',
       type: tool.type,
       config: {
-        serverUrl: tool.config?.serverUrl || '',
+        connectionId: tool.config?.connectionId || '',
         toolName: tool.config?.toolName || '',
         code: tool.config?.code || '',
+        argsSchemaText: JSON.stringify(tool.config?.args_schema || {}, null, 2),
+        sampleArgsJson: JSON.stringify(tool.config?.sampleArgs || {}, null, 2),
       },
       enabled: tool.enabled !== false,
     })
@@ -1868,14 +2383,37 @@ function openToolDialog(tool: Tool | null = null) {
       name: '',
       description: '',
       type: 'mcp',
-      config: { serverUrl: '', toolName: '', code: '' },
+      config: {
+        connectionId: '',
+        toolName: '',
+        code: '',
+        argsSchemaText:
+          '{\n  "$schema": "http://json-schema.org/draft-07/schema#",\n  "type": "object",\n  "properties": {\n    "input": { "type": "string", "description": "Input value" }\n  },\n  "required": ["input"]\n}',
+        sampleArgsJson: '{\n  "input": "hello"\n}',
+      },
       enabled: true,
     })
   showToolDialog.value = true
 }
 
 async function saveTool() {
-  const payload = { ...toolForm, config: { ...toolForm.config } }
+  const parsedArgsSchema = parseJsonObject(toolForm.config.argsSchemaText || '{}', {})
+  const parsedSampleArgs = parseJsonObject(toolForm.config.sampleArgsJson || '{}', {})
+
+  const configPayload: Record<string, unknown> = {}
+  if (toolForm.type === 'mcp') {
+    configPayload['connectionId'] = toolForm.config.connectionId || undefined
+    configPayload['toolName'] = toolForm.config.toolName || undefined
+  } else {
+    configPayload['code'] = toolForm.config.code || ''
+    configPayload['args_schema'] = parsedArgsSchema
+    configPayload['sampleArgs'] = parsedSampleArgs
+  }
+
+  const payload = {
+    ...toolForm,
+    config: configPayload,
+  }
   try {
     if (editingTool.value?.id) {
       await toolsStore.updateTool(editingTool.value.id, payload)
@@ -1887,6 +2425,27 @@ async function saveTool() {
     showToolDialog.value = false
   } catch {
     notify.error('Failed to save tool.')
+  }
+}
+
+async function runToolTest() {
+  toolTestResult.value = ''
+  toolTestError.value = ''
+  if (!editingTool.value?.id) {
+    toolTestError.value = 'Save the tool first before testing.'
+    return
+  }
+
+  toolTestRunning.value = true
+  try {
+    const args = parseJsonObject(toolForm.config.sampleArgsJson || '{}', {})
+    const result = await toolsStore.executeTool(editingTool.value.id, args)
+    toolTestResult.value = JSON.stringify(result, null, 2)
+    notify.success('Tool test succeeded.')
+  } catch {
+    toolTestError.value = 'Tool test failed. Check backend logs and configuration.'
+  } finally {
+    toolTestRunning.value = false
   }
 }
 
@@ -1924,7 +2483,8 @@ async function createKs() {
   )
     documentProcessorConfig.url = newKsDocProcessorUrl.value
   await knowledgeStore.createKnowledgeStore(newKsName.value, newKsDesc.value, {
-    embeddingModelId: newKsEmbeddingModelId.value,
+    embeddingModelId:
+      newKsEmbeddingModelId.value === '__default__' ? null : newKsEmbeddingModelId.value,
     vectorStoreConfig,
     documentProcessorConfig,
     chunkSize: newKsChunkSize.value || 1000,
@@ -1935,7 +2495,7 @@ async function createKs() {
   newKsName.value = ''
   newKsDesc.value = ''
   // Reset to defaults
-  newKsEmbeddingModelId.value = defaultEmbeddingModelId.value
+  newKsEmbeddingModelId.value = defaultEmbeddingModelId.value || '__default__'
   newKsVectorStoreType.value = defaultVectorStoreType.value || 'local'
   newKsVectorStoreUrl.value = vectorStoreUrls[defaultVectorStoreType.value || ''] || ''
   newKsDocProcessorType.value = defaultDocProcessorType.value || 'langchain'

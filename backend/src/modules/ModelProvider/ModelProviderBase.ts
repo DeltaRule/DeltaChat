@@ -3,6 +3,21 @@
 export interface ChatMessage {
   role: string
   content: string
+  name?: string
+  toolCallId?: string
+  toolCalls?: ToolCall[]
+}
+
+export interface ToolDefinition {
+  name: string
+  description?: string
+  inputSchema?: Record<string, unknown>
+}
+
+export interface ToolCall {
+  id: string
+  name: string
+  arguments: Record<string, unknown>
 }
 
 export interface ChatResult {
@@ -11,6 +26,7 @@ export interface ChatResult {
   model: string
   usage: Record<string, unknown>
   finishReason?: string
+  toolCalls?: ToolCall[]
 }
 
 export interface ModelOptions {
@@ -18,6 +34,7 @@ export interface ModelOptions {
   temperature?: number
   maxTokens?: number
   topP?: number
+  tools?: ToolDefinition[]
 }
 
 /**
@@ -30,6 +47,10 @@ abstract class ModelProviderBase {
 
   async *stream(_messages: ChatMessage[], _options?: ModelOptions): AsyncGenerator<string> {
     throw new Error(`${this.constructor.name} must implement stream(messages, options)`)
+  }
+
+  supportsTools(): boolean {
+    return false
   }
 
   getName(): string {
