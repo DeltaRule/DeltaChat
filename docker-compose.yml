@@ -72,7 +72,6 @@ services:
       WEBHOOK_SECRET: "${WEBHOOK_SECRET:-change-me-in-production}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:5173,http://localhost:80}"
       BINARY_STORAGE_PATH: /app/data/binaries
-      MCP_SERVER_URL: "${MCP_SERVER_URL:-}"
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
       JWT_EXPIRES_IN: "${JWT_EXPIRES_IN:-7d}"
       GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"

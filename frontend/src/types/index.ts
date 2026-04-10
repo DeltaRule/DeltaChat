@@ -66,6 +66,16 @@ export interface Tool {
   _sharedWithMe?: boolean
 }
 
+export interface McpConnection {
+  id: string
+  name: string
+  serverUrl: string
+  timeout?: number
+  ownerId?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
 export interface RuntimeExecutorSettings {
   mode?: 'spawn' | 'sandbox'
   timeout?: number

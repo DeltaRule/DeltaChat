@@ -6,14 +6,17 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 
 ## Features
 
-| Feature                  | Description                                                       |
-| ------------------------ | ----------------------------------------------------------------- |
-| 💬 Real-time Chat        | Streaming responses via Socket.io and SSE                         |
-| 🧠 Multiple AI Providers | OpenAI, Google Gemini, Ollama, and more                           |
-| 🔗 Webhook Integration   | Chat with any webhook (e.g. n8n workflows) instead of an AI model |
-| 📚 Knowledge Stores      | Shared document repositories with RAG retrieval                   |
-| 🔌 MCP Support           | Model Context Protocol client for tool use                        |
-| 🧩 Fully Modular         | Swap any provider via plugin classes                              |
+| Feature                  | Description                                                                                    |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
+| 💬 Real-time Chat        | Streaming responses via Socket.io and SSE                                                      |
+| 🧠 Multiple AI Providers | OpenAI, Anthropic, Google Gemini, Ollama, DeepSeek, Groq, and more                             |
+| 🔗 Webhook Integration   | Chat with any webhook (e.g. n8n workflows) instead of an AI model                              |
+| 📚 Knowledge Stores      | Shared document repositories with RAG retrieval                                                |
+| 🔌 MCP Support           | Per-user MCP server connections stored in DB with browser-direct + backend-proxy CORS handling |
+| 🛠️ Executable Tools      | MCP, Python, and TypeScript tools with sandboxed execution                                     |
+| 🔒 Auth & SCIM           | JWT authentication, SCIM user provisioning, user groups                                        |
+| 🤝 Chat Sharing          | Share chats with other users or groups                                                         |
+| 🧩 Fully Modular         | Swap any provider via plugin classes                                                           |
 
 ---
 
@@ -43,13 +46,17 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 
 ![Settings – models](docs/screenshots/settings-models.png)
 
+### Settings — MCP Servers (per-user MCP connections)
+
+![Settings – MCP Servers](docs/screenshots/settings-mcp.png)
+
 ---
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Frontend  (Vue 3 + Vuetify 3, served by nginx)              │
+│  Frontend  (Vue 3 + ShadCN UI, served by nginx)             │
 └──────────────────┬───────────────────────────────────────────┘
                    │ REST / WebSocket
 ┌──────────────────▼───────────────────────────────────────────┐
@@ -77,14 +84,14 @@ A modular, extensible AI chat interface built with **Node.js + Vue 3** using **[
 Every module has an abstract base class and one or more concrete implementations.
 To add a new provider, extend the base class and register it in the service.
 
-| Module              | Base class              | Implementations                                       |
-| ------------------- | ----------------------- | ----------------------------------------------------- |
-| `ModelProvider`     | `ModelProviderBase`     | `OpenAIProvider`, `GeminiProvider`, `WebhookProvider` |
-| `EmbeddingProvider` | `EmbeddingProviderBase` | `OpenAIEmbedding`, `OllamaEmbedding`                  |
-| `BinaryProcessor`   | `BinaryProcessorBase`   | `TikaProcessor`, `DoclingProcessor`                   |
-| `BinaryStorage`     | `BinaryStorageBase`     | `LocalBinaryStorage`                                  |
-| `VectorStore`       | `VectorStoreBase`       | `ChromaVectorStore`                                   |
-| `FunctionExecutor`  | `FunctionExecutorBase`  | `LocalExecutor`, `DockerExecutor`                     |
+| Module              | Base class              | Implementations                                                                                                                                                                              |
+| ------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ModelProvider`     | `ModelProviderBase`     | `OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`, `OllamaProvider`, `DeepSeekProvider`, `GroqProvider`, `MistralProvider`, `CohereProvider`, `AzureOpenAIProvider`, `WebhookProvider` |
+| `EmbeddingProvider` | `EmbeddingProviderBase` | `OpenAIEmbedding`, `OllamaEmbedding`, `GeminiEmbedding`, `MistralEmbedding`, `CohereEmbedding`, `HuggingFaceEmbedding`, `AzureOpenAIEmbedding`                                               |
+| `BinaryProcessor`   | `BinaryProcessorBase`   | `TikaProcessor`, `DoclingProcessor`, `LangChainProcessor`, `UnstructuredProcessor`                                                                                                           |
+| `BinaryStorage`     | `BinaryStorageBase`     | `LocalBinaryStorage`, `S3BinaryStorage`, `AzureBlobStorage`, `GCSBinaryStorage`                                                                                                              |
+| `VectorStore`       | `VectorStoreBase`       | `ChromaVectorStore`, `LocalVectorStore`, `QdrantVectorStore`, `PineconeVectorStore`, `MilvusVectorStore`, `PgVectorStore`, `WeaviateVectorStore`                                             |
+| `FunctionExecutor`  | `FunctionExecutorBase`  | `PythonExecutor`, `TypeScriptExecutor`                                                                                                                                                       |
 
 ---
 
@@ -186,7 +193,7 @@ docker run -d \
 
 > ⚠ `DELTA_DB_URL` is **required** — the application will not start without it.
 
-Since DeltaDatabase has no native list/delete/query, the adapter (`backend/src/db/DeltaDatabaseAdapter.js`) maintains:
+Since DeltaDatabase has no native list/delete/query, the adapter (`backend/src/db/DeltaDatabaseAdapter.ts`) maintains:
 
 - **Master index** (`{col}:_index`) — list of all entity IDs per collection
 - **Secondary indexes** (`{col}:_idx:{field}:{value}`) — e.g. messages by chatId
@@ -201,6 +208,13 @@ Since DeltaDatabase has no native list/delete/query, the adapter (`backend/src/d
 | `knowledge_stores` | `knowledge_stores:{id}` | —                                      |
 | `documents`        | `documents:{id}`        | `documents:_idx:knowledgeStoreId:{id}` |
 | `webhooks`         | `webhooks:{id}`         | —                                      |
+| `models`           | `models:{id}`           | —                                      |
+| `agents`           | `agents:{id}`           | —                                      |
+| `tools`            | `tools:{id}`            | —                                      |
+| `mcp_connections`  | `mcp_connections:{id}`  | —                                      |
+| `users`            | `users:{id}`            | —                                      |
+| `user_groups`      | `user_groups:{id}`      | —                                      |
+| `sharing_rules`    | `sharing_rules:{id}`    | `sharing_rules:_idx:chatId:{chatId}`   |
 | `settings`         | `settings:global`       | —                                      |
 
 ---
@@ -232,11 +246,26 @@ This enables integration with tools like **n8n**, **Make**, **Zapier**, or any c
 
 ## MCP (Model Context Protocol)
 
-Configure an MCP server URL in Settings. The backend MCP service:
+MCP server connections are stored **per user** in DeltaDatabase. Users manage their connections in **Settings → MCP Servers**.
 
-- Connects to the MCP server
-- Lists available tools
-- Injects tool definitions into the system prompt / function-calling
+### How it works
+
+1. **Frontend management** — Add/edit/test MCP server connections from the Settings UI. Tests go directly from the browser to the MCP server URL.
+2. **CORS handling** — If the browser cannot reach the MCP server directly (CORS), requests fall back to the backend proxy (`POST /api/mcp/proxy`).
+3. **Chat-time execution** — During chat, MCP tool calls are executed server-side via `ToolExecutionService`, which looks up the connection URL from the database.
+
+### API endpoints
+
+| Method | Endpoint                   | Description                          |
+| ------ | -------------------------- | ------------------------------------ |
+| GET    | `/api/mcp-connections`     | List user's MCP connections          |
+| POST   | `/api/mcp-connections`     | Create MCP connection                |
+| GET    | `/api/mcp-connections/:id` | Get connection                       |
+| PUT    | `/api/mcp-connections/:id` | Update connection                    |
+| DELETE | `/api/mcp-connections/:id` | Delete connection                    |
+| POST   | `/api/mcp/proxy`           | Proxy JSON-RPC request to MCP server |
+| POST   | `/api/mcp/tools`           | List tools from default MCP server   |
+| POST   | `/api/mcp/call`            | Call tool on default MCP server      |
 
 ---
 
@@ -279,8 +308,42 @@ Configure an MCP server URL in Settings. The backend MCP service:
 | GET    | `/api/settings`  | Get settings             |
 | PUT    | `/api/settings`  | Update settings          |
 | GET    | `/api/providers` | List available providers |
-| POST   | `/api/mcp/tools` | List MCP tools           |
-| POST   | `/api/mcp/call`  | Call MCP tool            |
+
+### MCP Connections
+
+| Method | Endpoint                   | Description                  |
+| ------ | -------------------------- | ---------------------------- |
+| GET    | `/api/mcp-connections`     | List MCP connections         |
+| POST   | `/api/mcp-connections`     | Create MCP connection        |
+| GET    | `/api/mcp-connections/:id` | Get connection               |
+| PUT    | `/api/mcp-connections/:id` | Update connection            |
+| DELETE | `/api/mcp-connections/:id` | Delete connection            |
+| POST   | `/api/mcp/proxy`           | Proxy JSON-RPC to MCP server |
+| POST   | `/api/mcp/tools`           | List MCP tools               |
+| POST   | `/api/mcp/call`            | Call MCP tool                |
+
+### Auth & Users
+
+| Method | Endpoint               | Description         |
+| ------ | ---------------------- | ------------------- |
+| POST   | `/api/auth/login`      | Login               |
+| GET    | `/api/auth/me`         | Current user        |
+| GET    | `/api/users`           | List users (admin)  |
+| POST   | `/api/users`           | Create user (admin) |
+| PUT    | `/api/users/:id`       | Update user (admin) |
+| DELETE | `/api/users/:id`       | Delete user (admin) |
+| GET    | `/api/user-groups`     | List user groups    |
+| POST   | `/api/user-groups`     | Create user group   |
+| PUT    | `/api/user-groups/:id` | Update user group   |
+| DELETE | `/api/user-groups/:id` | Delete user group   |
+
+### Sharing
+
+| Method | Endpoint                      | Description       |
+| ------ | ----------------------------- | ----------------- |
+| GET    | `/api/sharing/chat/:id`       | Get sharing rules |
+| PUT    | `/api/sharing/chat/:id`       | Set sharing rules |
+| GET    | `/api/sharing/shared-with-me` | Shared chat list  |
 
 ### Models (named AI configurations)
 
@@ -324,51 +387,83 @@ DeltaChat/
 │   ├── Dockerfile
 │   ├── package.json
 │   └── src/
-│       ├── server.js            # Entry point + Socket.io
-│       ├── app.js               # Express app
-│       ├── config/index.js      # Config from env vars
+│       ├── server.ts            # Entry point + Socket.io
+│       ├── app.ts               # Express app
+│       ├── config/index.ts      # Config from env vars
 │       ├── db/
-│       │   └── DeltaDatabaseAdapter.js  # DeltaDatabase client + CRUD adapter
+│       │   ├── DeltaDatabaseAdapter.ts  # DeltaDatabase client + CRUD adapter
+│       │   └── schema.ts               # Collection schemas & validation
+│       ├── middleware/
+│       │   └── auth.ts          # JWT auth middleware
 │       ├── modules/
-│       │   ├── ModelProvider/
+│       │   ├── ModelProvider/    # OpenAI, Anthropic, Gemini, Ollama, DeepSeek, Groq, Mistral, Cohere, Azure, Webhook
 │       │   ├── EmbeddingProvider/
-│       │   ├── BinaryProcessor/
-│       │   ├── BinaryStorage/
-│       │   ├── VectorStore/
-│       │   └── FunctionExecutor/
+│       │   ├── BinaryProcessor/ # Tika, Docling, LangChain, Unstructured
+│       │   ├── BinaryStorage/   # Local, S3, Azure, GCS
+│       │   ├── VectorStore/     # Chroma, Local, Qdrant, Pinecone, Milvus, PgVector, Weaviate
+│       │   └── FunctionExecutor/ # Python, TypeScript
 │       ├── services/
-│       │   ├── ChatService.js
-│       │   ├── KnowledgeService.js
-│       │   ├── WebhookService.js
-│       │   └── McpService.js
+│       │   ├── AuthService.ts
+│       │   ├── ChatService.ts
+│       │   ├── KnowledgeService.ts
+│       │   ├── McpService.ts
+│       │   ├── SharingService.ts
+│       │   ├── ToolExecutionService.ts
+│       │   └── WebhookService.ts
 │       └── routes/
-│           ├── chat.js
-│           ├── knowledge.js
-│           ├── webhooks.js
-│           ├── settings.js
-│           └── mcp.js
+│           ├── agents.ts
+│           ├── auth.ts
+│           ├── chat.ts
+│           ├── knowledge.ts
+│           ├── mcp.ts
+│           ├── mcpConnections.ts
+│           ├── models.ts
+│           ├── scim.ts
+│           ├── settings.ts
+│           ├── sharing.ts
+│           ├── tools.ts
+│           ├── user-groups.ts
+│           ├── users.ts
+│           └── webhooks.ts
 └── frontend/
     ├── Dockerfile
     ├── nginx.conf
     ├── package.json
-    ├── vite.config.js
+    ├── vite.config.ts
     └── src/
-        ├── main.js
+        ├── main.ts
         ├── App.vue
-        ├── router/index.js
+        ├── router/index.ts
+        ├── lib/
+        │   ├── api.ts           # Axios API client
+        │   └── mcpClient.ts     # Browser-side MCP JSON-RPC client
         ├── stores/
-        │   ├── chat.js
-        │   ├── knowledge.js
-        │   └── settings.js
+        │   ├── agents.ts
+        │   ├── auth.ts
+        │   ├── chat.ts
+        │   ├── knowledge.ts
+        │   ├── mcpConnections.ts
+        │   ├── models.ts
+        │   ├── notification.ts
+        │   ├── settings.ts
+        │   ├── sharing.ts
+        │   ├── theme.ts
+        │   ├── tools.ts
+        │   ├── userGroups.ts
+        │   └── users.ts
         ├── components/
         │   ├── AppNavigation.vue
         │   ├── ChatInterface.vue
         │   ├── ChatMessage.vue
         │   ├── KnowledgeStores.vue
-        │   └── SettingsPanel.vue
+        │   ├── SettingsPanel.vue
+        │   ├── ShareDialog.vue
+        │   └── ui/              # ShadCN-vue component library
         └── views/
+            ├── AdminView.vue
             ├── ChatView.vue
             ├── KnowledgeView.vue
+            ├── LoginView.vue
             └── SettingsView.vue
 ```
 

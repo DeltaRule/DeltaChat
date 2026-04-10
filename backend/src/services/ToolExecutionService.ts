@@ -10,6 +10,7 @@ import {
   type TypeScriptExecutorConfig,
 } from '../modules/FunctionExecutor/TypeScriptExecutor'
 import type McpService from './McpService'
+import { getAdapter } from '../db/DeltaDatabaseAdapter'
 
 const ajv = new Ajv.default()
 
@@ -74,8 +75,6 @@ export class ToolExecutionService {
   private async _executeMCP(tool: ToolEntity, args: Record<string, unknown>): Promise<unknown> {
     const config = tool.config as Record<string, unknown>
 
-    // For MCP tools, either use connectionId to identify which MCP server,
-    // or default to the configured MCP service
     const toolName =
       (typeof config['toolName'] === 'string' ? config['toolName'] : null) || tool.name
 
@@ -83,7 +82,22 @@ export class ToolExecutionService {
       throw new Error('MCP tool requires a toolName in config or tool name')
     }
 
+    // If a connectionId is specified, look up the MCP server URL from DB
+    const connectionId = typeof config['connectionId'] === 'string' ? config['connectionId'] : null
+
     try {
+      if (connectionId) {
+        const db = getAdapter()
+        const conn = await db.getMcpConnection(connectionId)
+        if (!conn) {
+          throw new Error(`MCP connection "${connectionId}" not found`)
+        }
+        const serverUrl = conn['serverUrl'] as string
+        const timeout = (conn['timeout'] as number) || 30000
+        return await this._mcpService.callToolWithUrl(serverUrl, timeout, toolName, args)
+      }
+
+      // Fallback to default MCP server (env var)
       const result = await this._mcpService.callTool(toolName, args)
       return result
     } catch (error) {

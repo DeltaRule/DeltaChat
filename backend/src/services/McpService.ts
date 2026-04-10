@@ -48,6 +48,9 @@ class McpService {
   private _capabilities: McpCapabilities
   private _client: AxiosInstance
 
+  // Cache for per-URL clients (used when calling MCP servers from DB connections)
+  private _urlClients: Map<string, { client: AxiosInstance; initialized: boolean }> = new Map()
+
   constructor(opts: McpServiceOpts = {}) {
     this._serverUrl = opts.serverUrl ?? config.mcp.serverUrl
     this._timeout = opts.timeout ?? 30000
@@ -163,6 +166,89 @@ class McpService {
   async getPrompt(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
     await this.initialize()
     return this._call('prompts/get', { name, arguments: args })
+  }
+
+  // ── Per-URL methods (for DB-stored MCP connections) ────────────────────────
+
+  private _getOrCreateClient(serverUrl: string, timeout = 30000) {
+    let entry = this._urlClients.get(serverUrl)
+    if (!entry) {
+      entry = {
+        client: axios.create({
+          baseURL: serverUrl,
+          timeout,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+        initialized: false,
+      }
+      this._urlClients.set(serverUrl, entry)
+    }
+    return entry
+  }
+
+  private async _callWithUrl<T>(
+    serverUrl: string,
+    timeout: number,
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<T> {
+    const entry = this._getOrCreateClient(serverUrl, timeout)
+
+    // Auto-initialize if needed
+    if (!entry.initialized) {
+      const initReq = {
+        jsonrpc: '2.0',
+        id: this._nextId(),
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: { roots: { listChanged: false }, sampling: {} },
+          clientInfo: { name: 'deltachat-backend', version: '1.0.0' },
+        },
+      }
+      await entry.client.post('/', initReq)
+      entry.initialized = true
+      entry.client
+        .post('/', { jsonrpc: '2.0', method: 'notifications/initialized', params: {} })
+        .catch(() => {})
+    }
+
+    const request = {
+      jsonrpc: '2.0',
+      id: this._nextId(),
+      method,
+      params,
+    }
+
+    const response = await entry.client.post<McpResponse<T>>('/', request)
+    const body = response.data
+
+    if (body.error) {
+      const err: McpErrorWithMcp = new Error(
+        `MCP error [${body.error.code}]: ${body.error.message}`,
+      )
+      err.mcpError = body.error
+      throw err
+    }
+
+    return body.result as T
+  }
+
+  async callToolWithUrl(
+    serverUrl: string,
+    timeout: number,
+    toolName: string,
+    args: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    return this._callWithUrl(serverUrl, timeout, 'tools/call', {
+      name: toolName,
+      arguments: args,
+    })
+  }
+
+  async listToolsWithUrl(serverUrl: string, timeout = 30000): Promise<Tool[]> {
+    const result = await this._callWithUrl<{ tools?: Tool[] }>(serverUrl, timeout, 'tools/list')
+    return result.tools ?? []
   }
 }
 

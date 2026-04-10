@@ -21,6 +21,7 @@ import toolsRouter from './tools'
 import usersRouter from './users'
 import userGroupsRouter from './user-groups'
 import sharingRouter from './sharing'
+import mcpConnectionsRouter from './mcpConnections'
 
 const router = Router()
 
@@ -62,6 +63,7 @@ router.use('/tools', toolsRouter)
 router.use('/users', usersRouter)
 router.use('/user-groups', userGroupsRouter)
 router.use('/sharing', sharingRouter)
+router.use('/mcp-connections', mcpConnectionsRouter)
 
 // GET /api/providers
 router.get('/providers', async (_req: Request, res: Response, next: NextFunction) => {

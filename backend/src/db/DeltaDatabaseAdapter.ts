@@ -502,6 +502,23 @@ export class DeltaDatabaseAdapter {
     return this._backend.delete('tools', id)
   }
 
+  // MCP Connections
+  createMcpConnection(doc: Record<string, unknown>): Promise<Entity> {
+    return this._backend.insert('mcp_connections', doc)
+  }
+  listMcpConnections(): Promise<Entity[]> {
+    return this._backend.findAll('mcp_connections')
+  }
+  getMcpConnection(id: string): Promise<Entity | null> {
+    return this._backend.findById('mcp_connections', id)
+  }
+  updateMcpConnection(id: string, fields: Record<string, unknown>): Promise<Entity | null> {
+    return this._backend.update('mcp_connections', id, fields)
+  }
+  deleteMcpConnection(id: string): Promise<DeleteResult> {
+    return this._backend.delete('mcp_connections', id)
+  }
+
   // Settings
   async getSettings(): Promise<Entity> {
     return (await this._backend.findById('settings', 'global')) ?? { id: 'global' }

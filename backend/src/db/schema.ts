@@ -188,6 +188,18 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
       updatedAt: 'string (ISO 8601)',
     },
   },
+  mcp_connections: {
+    required: ['id', 'name', 'serverUrl'],
+    fields: {
+      id: 'string',
+      name: 'string',
+      serverUrl: 'string',
+      timeout: 'number|null',
+      ownerId: 'string|null',
+      createdAt: 'string (ISO 8601)',
+      updatedAt: 'string (ISO 8601)',
+    },
+  },
 }
 
 export interface AppError extends Error {

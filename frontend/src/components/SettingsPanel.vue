@@ -785,6 +785,77 @@
             </Card>
           </template>
 
+          <!-- ── MCP Servers ─────────────────────────────── -->
+          <template v-else-if="activeTab === 'mcpservers'">
+            <div class="flex items-center justify-between mb-5 pb-3 border-b-2 border-primary/15">
+              <h2 class="text-xl font-bold">MCP Servers</h2>
+              <Button size="sm" @click="openMcpDialog()">
+                <Plus class="h-4 w-4 mr-2" />Add Server
+              </Button>
+            </div>
+            <p class="text-sm text-muted-foreground mb-4">
+              Manage MCP (Model Context Protocol) server connections. Each connection can be used by
+              MCP tools to access external capabilities. Connections to localhost servers work
+              directly from your browser; remote servers are proxied through the backend.
+            </p>
+
+            <div
+              v-if="!mcpStore.connections.length"
+              class="flex flex-col items-center py-14 text-center"
+            >
+              <Link class="h-16 w-16 text-muted-foreground/25 mb-4" />
+              <h3 class="text-lg font-semibold mb-2">No MCP servers</h3>
+              <p class="text-sm text-muted-foreground mb-4">
+                Add an MCP server connection to get started.
+              </p>
+              <Button size="sm" @click="openMcpDialog()">
+                <Plus class="h-4 w-4 mr-2" />Add Server
+              </Button>
+            </div>
+
+            <Card v-else>
+              <div class="divide-y divide-border">
+                <div
+                  v-for="conn in mcpStore.connections"
+                  :key="conn.id"
+                  class="flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors"
+                >
+                  <Link class="h-5 w-5 text-muted-foreground" />
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium truncate">{{ conn.name }}</div>
+                    <div class="text-xs text-muted-foreground truncate">{{ conn.serverUrl }}</div>
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        class="h-7 w-7"
+                        @click="openMcpDialog(conn)"
+                      >
+                        <Pencil class="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Edit</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        class="h-7 w-7 text-destructive"
+                        @click="deleteMcpConnection(conn.id)"
+                      >
+                        <Trash2 class="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete</TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
+            </Card>
+          </template>
+
           <!-- ── Executors ─────────────────────────────── -->
           <template v-else-if="activeTab === 'executors'">
             <h2 class="text-xl font-bold mb-5 pb-3 border-b-2 border-primary/15">Executors</h2>
@@ -1243,8 +1314,19 @@
             </div>
             <template v-if="toolForm.type === 'mcp'">
               <div>
-                <Label class="mb-1.5 block text-xs">MCP Connection ID</Label
-                ><Input v-model="toolForm.config.connectionId" placeholder="mcp-default" />
+                <Label class="mb-1.5 block text-xs">MCP Server</Label>
+                <Select v-model="toolForm.config.connectionId">
+                  <SelectTrigger><SelectValue placeholder="Select MCP server…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      v-for="conn in mcpStore.connections"
+                      :key="conn.id"
+                      :value="conn.id"
+                    >
+                      {{ conn.name }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label class="mb-1.5 block text-xs">Tool Name</Label
@@ -1300,6 +1382,61 @@
           <DialogFooter>
             <Button variant="outline" @click="showToolDialog = false"> Cancel </Button>
             <Button :disabled="!toolForm.name.trim()" @click="saveTool"> Save </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <!-- MCP Connection Dialog -->
+      <Dialog :open="showMcpDialog" @update:open="showMcpDialog = $event">
+        <DialogContent class="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{{
+              editingMcpConn?.id ? 'Edit MCP Server' : 'Add MCP Server'
+            }}</DialogTitle>
+            <DialogDescription>Configure a connection to an MCP server.</DialogDescription>
+          </DialogHeader>
+          <div class="space-y-3">
+            <div>
+              <Label class="mb-1.5 block text-xs">Name</Label>
+              <Input v-model="mcpForm.name" placeholder="My MCP Server" />
+            </div>
+            <div>
+              <Label class="mb-1.5 block text-xs">Server URL</Label>
+              <Input v-model="mcpForm.serverUrl" placeholder="http://localhost:3001" />
+            </div>
+            <div>
+              <Label class="mb-1.5 block text-xs">Timeout (ms)</Label>
+              <Input v-model.number="mcpForm.timeout" type="number" placeholder="30000" />
+            </div>
+            <div
+              v-if="mcpTestResult"
+              class="rounded-md p-3 text-sm"
+              :class="
+                mcpTestResult.ok
+                  ? 'bg-green-500/10 text-green-700 dark:text-green-400'
+                  : 'bg-destructive/10 text-destructive'
+              "
+            >
+              <template v-if="mcpTestResult.ok">
+                Connection successful — {{ mcpTestResult.tools?.length || 0 }} tool(s) available
+              </template>
+              <template v-else> Connection failed: {{ mcpTestResult.error }} </template>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" @click="showMcpDialog = false">Cancel</Button>
+            <Button
+              variant="secondary"
+              :disabled="!mcpForm.serverUrl.trim() || mcpTesting"
+              @click="testMcpConnection"
+            >
+              {{ mcpTesting ? 'Testing…' : 'Test' }}
+            </Button>
+            <Button
+              :disabled="!mcpForm.name.trim() || !mcpForm.serverUrl.trim()"
+              @click="saveMcpConnection"
+              >Save</Button
+            >
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1434,6 +1571,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useModelsStore } from '../stores/models'
 import { useAgentsStore } from '../stores/agents'
 import { useToolsStore } from '../stores/tools'
+import { useMcpConnectionsStore } from '../stores/mcpConnections'
 import { useKnowledgeStore } from '../stores/knowledge'
 import { useThemeStore } from '../stores/theme'
 import { useNotificationStore } from '../stores/notification'
@@ -1518,6 +1656,7 @@ function openShareDialog(resourceType: string, resourceId: string, label: string
 const modelsStore = useModelsStore()
 const agentsStore = useAgentsStore()
 const toolsStore = useToolsStore()
+const mcpStore = useMcpConnectionsStore()
 const knowledgeStore = useKnowledgeStore()
 const themeStore = useThemeStore()
 const notify = useNotificationStore()
@@ -1533,6 +1672,7 @@ const tabs = [
   { value: 'knowledge', label: 'Knowledge', icon: Database },
   { value: 'agents', label: 'Agents', icon: Bot },
   { value: 'tools', label: 'Tools', icon: Wrench },
+  { value: 'mcpservers', label: 'MCP Servers', icon: Link },
   { value: 'executors', label: 'Executors', icon: Zap },
   { value: 'appearance', label: 'Appearance', icon: Palette },
 ]
@@ -2360,6 +2500,64 @@ const toolTestRunning = ref(false)
 const toolTestResult = ref('')
 const toolTestError = ref('')
 
+// ── MCP Connection dialog ────────────────────────────
+const showMcpDialog = ref(false)
+const editingMcpConn = ref<{ id?: string } | null>(null)
+const mcpForm = reactive({ name: '', serverUrl: '', timeout: 30000 })
+const mcpTesting = ref(false)
+const mcpTestResult = ref<{ ok?: boolean; tools?: { name: string }[]; error?: string } | null>(null)
+
+function openMcpDialog(
+  conn: { id?: string; name?: string; serverUrl?: string; timeout?: number } | null = null,
+) {
+  editingMcpConn.value = conn
+  mcpTestResult.value = null
+  if (conn) {
+    Object.assign(mcpForm, {
+      name: conn.name || '',
+      serverUrl: conn.serverUrl || '',
+      timeout: conn.timeout || 30000,
+    })
+  } else {
+    Object.assign(mcpForm, { name: '', serverUrl: '', timeout: 30000 })
+  }
+  showMcpDialog.value = true
+}
+
+async function saveMcpConnection() {
+  try {
+    if (editingMcpConn.value?.id) {
+      await mcpStore.updateConnection(editingMcpConn.value.id, { ...mcpForm })
+      notify.success('MCP connection updated!')
+    } else {
+      await mcpStore.createConnection({ ...mcpForm })
+      notify.success('MCP connection created!')
+    }
+    showMcpDialog.value = false
+  } catch {
+    // store already shows notification
+  }
+}
+
+async function deleteMcpConnection(id: string) {
+  try {
+    await mcpStore.deleteConnection(id)
+    notify.success('MCP connection deleted')
+  } catch {
+    // store already shows notification
+  }
+}
+
+async function testMcpConnection() {
+  mcpTesting.value = true
+  mcpTestResult.value = null
+  try {
+    mcpTestResult.value = await mcpStore.testConnection(mcpForm.serverUrl, editingMcpConn.value?.id)
+  } finally {
+    mcpTesting.value = false
+  }
+}
+
 function openToolDialog(tool: Tool | null = null) {
   editingTool.value = tool
   toolTestResult.value = ''
@@ -2535,6 +2733,7 @@ onMounted(async () => {
     modelsStore.loadModels(),
     agentsStore.loadAgents(),
     toolsStore.loadTools(),
+    mcpStore.loadConnections(),
     knowledgeStore.loadKnowledgeStores(),
   ])
 })
