@@ -41,25 +41,18 @@ export interface ModelOptions {
  * ModelProviderBase – abstract base class for all AI model providers.
  */
 abstract class ModelProviderBase {
-  async chat(_messages: ChatMessage[], _options?: ModelOptions): Promise<ChatResult> {
-    throw new Error(`${this.constructor.name} must implement chat(messages, options)`)
-  }
+  abstract chat(messages: ChatMessage[], options?: ModelOptions): Promise<ChatResult>
 
-  async *stream(_messages: ChatMessage[], _options?: ModelOptions): AsyncGenerator<string> {
-    throw new Error(`${this.constructor.name} must implement stream(messages, options)`)
-  }
+  abstract stream(messages: ChatMessage[], options?: ModelOptions): AsyncGenerator<string>
 
+  /** Override to return true if the provider supports tool/function calls. */
   supportsTools(): boolean {
     return false
   }
 
-  getName(): string {
-    throw new Error(`${this.constructor.name} must implement getName()`)
-  }
+  abstract getName(): string
 
-  async getModels(): Promise<string[]> {
-    throw new Error(`${this.constructor.name} must implement getModels()`)
-  }
+  abstract getModels(): Promise<string[]>
 }
 
 export default ModelProviderBase

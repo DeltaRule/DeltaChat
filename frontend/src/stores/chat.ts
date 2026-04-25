@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
 import { io } from 'socket.io-client'
 import { useNotificationStore } from './notification'
+import { useAuthStore } from './auth'
 import api, { API_URL } from '../lib/api'
+import { setupMcpRelay } from '../composables/useMcpRelay'
 import type { Chat, ChatMessage } from '../types'
 
 interface StreamOpts {
@@ -16,17 +18,51 @@ export const useChatStore = defineStore('chat', () => {
   const messages: Record<string, ChatMessage[]> = reactive({})
   const streaming = ref(false)
   const streamError = ref<string | null>(null)
+  const loading = ref(false)
+  const error = ref<string | null>(null)
+  // Socket starts disconnected — token is not in localStorage (it lives only in Pinia memory).
+  // Call reconnectSocket() after login / page-load token refresh to authenticate.
   const socket = io(API_URL, {
-    autoConnect: true,
-    auth: { token: localStorage.getItem('deltachat-token') || '' },
+    autoConnect: false,
+    auth: { token: '' },
   })
   let _streamTimeout: ReturnType<typeof setTimeout> | null = null
+  let _relayCleanup: (() => void) | null = null
 
+  // Register MCP relay listeners once the socket is connected so client-scope
+  // MCP tools can be executed during chat without additional setup.
+  socket.on('connect', () => {
+    if (_relayCleanup) _relayCleanup()
+    _relayCleanup = setupMcpRelay(socket as unknown as import('socket.io-client').Socket)
+  })
+  socket.on('disconnect', () => {
+    if (_relayCleanup) {
+      _relayCleanup()
+      _relayCleanup = null
+    }
+  })
+
+  /**
+   * (Re)connect the socket using the current in-memory access token.
+   * Call this after login, token refresh, or logout.
+   */
   function reconnectSocket(): void {
-    socket.auth = { token: localStorage.getItem('deltachat-token') || '' }
+    let token = ''
+    try {
+      token = useAuthStore().token || ''
+    } catch {
+      /* store not ready yet */
+    }
+    socket.auth = { token }
     if (socket.connected) {
       socket.disconnect().connect()
+    } else {
+      socket.connect()
     }
+  }
+
+  function disconnectSocket(): void {
+    if (socket.connected) socket.disconnect()
   }
 
   async function loadChats(): Promise<void> {
@@ -43,26 +79,41 @@ export const useChatStore = defineStore('chat', () => {
     modelId: string | null,
     folder: string | null,
   ): Promise<Chat> {
-    const { data } = await api.post<Chat>('/chats', {
-      title: title || '',
-      modelId: modelId || null,
-      folder: folder || null,
-    })
-    chats.value.unshift(data)
-    return data
+    try {
+      const { data } = await api.post<Chat>('/chats', {
+        title: title || '',
+        modelId: modelId || null,
+        folder: folder || null,
+      })
+      chats.value.unshift(data)
+      return data
+    } catch (e: unknown) {
+      useNotificationStore().error(e instanceof Error ? e.message : 'Failed to create chat')
+      throw e
+    }
   }
 
   async function updateChat(id: string | null, fields: Partial<Chat>): Promise<Chat> {
-    const { data } = await api.patch<Chat>(`/chats/${id}`, fields)
-    const idx = chats.value.findIndex((c) => c.id === id)
-    if (idx !== -1) chats.value[idx] = data
-    return data
+    try {
+      const { data } = await api.patch<Chat>(`/chats/${id}`, fields)
+      const idx = chats.value.findIndex((c) => c.id === id)
+      if (idx !== -1) chats.value[idx] = data
+      return data
+    } catch (e: unknown) {
+      useNotificationStore().error(e instanceof Error ? e.message : 'Failed to update chat')
+      throw e
+    }
   }
 
   async function deleteChat(id: string): Promise<void> {
-    await api.delete(`/chats/${id}`)
-    chats.value = chats.value.filter((c) => c.id !== id)
-    if (currentChatId.value === id) currentChatId.value = null
+    try {
+      await api.delete(`/chats/${id}`)
+      chats.value = chats.value.filter((c) => c.id !== id)
+      if (currentChatId.value === id) currentChatId.value = null
+    } catch (e: unknown) {
+      useNotificationStore().error(e instanceof Error ? e.message : 'Failed to delete chat')
+      throw e
+    }
   }
 
   async function loadMessages(chatId: string): Promise<void> {
@@ -85,9 +136,17 @@ export const useChatStore = defineStore('chat', () => {
     const userMsg: ChatMessage = { role: 'user', content, id: Date.now() }
     if (!messages[chatId]) messages[chatId] = []
     messages[chatId].push(userMsg)
-    const { data } = await api.post<ChatMessage>(`/chats/${chatId}/messages`, { content, ...opts })
-    messages[chatId].push(data)
-    return data
+    try {
+      const { data } = await api.post<ChatMessage>(`/chats/${chatId}/messages`, {
+        content,
+        ...opts,
+      })
+      messages[chatId].push(data)
+      return data
+    } catch (e: unknown) {
+      useNotificationStore().error(e instanceof Error ? e.message : 'Failed to send message')
+      throw e
+    }
   }
 
   function _cleanupStreamListeners(): void {
@@ -183,6 +242,8 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     streaming,
     streamError,
+    loading,
+    error,
     loadChats,
     createChat,
     updateChat,
@@ -192,5 +253,6 @@ export const useChatStore = defineStore('chat', () => {
     streamMessage,
     stopStreaming,
     reconnectSocket,
+    disconnectSocket,
   }
 })

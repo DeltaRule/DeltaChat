@@ -136,10 +136,12 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Separator } from '../components/ui/separator'
 import { useAuthStore } from '../stores/auth'
-import { API_URL } from '../lib/api'
+import { useChatStore } from '../stores/chat'
+import api from '../lib/api'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const chatStore = useChatStore()
 
 const isRegister = ref(false)
 const loading = ref(false)
@@ -167,6 +169,7 @@ async function handleSubmit() {
     } else {
       await authStore.login(form.value.email, form.value.password)
     }
+    chatStore.reconnectSocket()
     router.push('/')
   } catch (e: any) {
     error.value = e.response?.data?.error || e.message || 'Authentication failed'
@@ -191,6 +194,7 @@ async function handleGoogleLogin() {
       callback: async (response: any) => {
         try {
           await authStore.googleLogin(response.credential)
+          chatStore.reconnectSocket()
           router.push('/')
         } catch (e: any) {
           error.value = e.response?.data?.error || e.message || 'Google authentication failed'
@@ -215,18 +219,17 @@ onMounted(async () => {
 
   // Check if Google auth is configured by checking settings
   try {
-    const res = await fetch(`${API_URL}/api/auth/google-enabled`)
-    if (res.ok) {
-      const data = await res.json()
-      googleEnabled.value = data.enabled
-      googleClientId.value = data.clientId || ''
-      if (data.enabled && data.clientId) {
-        // Load Google Identity Services script
-        const script = document.createElement('script')
-        script.src = 'https://accounts.google.com/gsi/client'
-        script.async = true
-        document.head.appendChild(script)
-      }
+    const { data } = await api.get<{ enabled: boolean; clientId: string | null }>(
+      '/auth/google-enabled',
+    )
+    googleEnabled.value = data.enabled
+    googleClientId.value = data.clientId || ''
+    if (data.enabled && data.clientId) {
+      // Load Google Identity Services script
+      const script = document.createElement('script')
+      script.src = 'https://accounts.google.com/gsi/client'
+      script.async = true
+      document.head.appendChild(script)
     }
   } catch {
     /* Google auth not available */

@@ -17,15 +17,21 @@ interface CreateKnowledgeStoreOpts {
 export const useKnowledgeStore = defineStore('knowledge', () => {
   const knowledgeStores = ref<KnowledgeStore[]>([])
   const documents = ref<Record<string, KnowledgeDocument[]>>({})
-  const _pollTimers: Record<string, ReturnType<typeof setInterval>> = {}
+  const loading = ref(false)
+  const error = ref<string | null>(null)
+  const _pollTimers = new Map<string, ReturnType<typeof setInterval>>()
 
   async function loadKnowledgeStores(): Promise<void> {
+    loading.value = true
+    error.value = null
     try {
       const { data } = await api.get<KnowledgeStore[]>('/knowledge')
       knowledgeStores.value = data
     } catch (e: unknown) {
-      console.error(e)
-      useNotificationStore().error(getErrorMessage(e, 'Failed to load knowledge stores'))
+      error.value = getErrorMessage(e, 'Failed to load knowledge stores')
+      useNotificationStore().error(error.value)
+    } finally {
+      loading.value = false
     }
   }
 
@@ -48,7 +54,6 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       knowledgeStores.value.push(data)
       return data
     } catch (e: unknown) {
-      console.error(e)
       useNotificationStore().error(getErrorMessage(e, 'Failed to create knowledge store'))
       throw e
     }
@@ -60,7 +65,6 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       await api.delete(`/knowledge/${id}`)
       knowledgeStores.value = knowledgeStores.value.filter((k) => k.id !== id)
     } catch (e: unknown) {
-      console.error(e)
       useNotificationStore().error(getErrorMessage(e, 'Failed to delete knowledge store'))
       throw e
     }
@@ -91,7 +95,6 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       _startPolling(ksId)
       return data
     } catch (e: unknown) {
-      console.error(e)
       useNotificationStore().error(getErrorMessage(e, `Failed to upload "${file.name}"`))
       throw e
     }
@@ -104,7 +107,6 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         documents.value[ksId] = documents.value[ksId].filter((d) => d.id !== docId)
       }
     } catch (e: unknown) {
-      console.error(e)
       useNotificationStore().error(getErrorMessage(e, 'Failed to delete document'))
       throw e
     }
@@ -124,14 +126,13 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch (e: unknown) {
-      console.error(e)
       useNotificationStore().error(getErrorMessage(e, 'Failed to download document'))
     }
   }
 
   function _startPolling(ksId: string): void {
-    if (_pollTimers[ksId]) return
-    _pollTimers[ksId] = setInterval(async () => {
+    if (_pollTimers.has(ksId)) return
+    const timer = setInterval(async () => {
       try {
         const { data } = await api.get<KnowledgeDocument[]>(`/knowledge/${ksId}/documents`)
         documents.value[ksId] = data
@@ -144,18 +145,27 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         _stopPolling(ksId)
       }
     }, 3000)
+    _pollTimers.set(ksId, timer)
   }
 
   function _stopPolling(ksId: string): void {
-    if (_pollTimers[ksId]) {
-      clearInterval(_pollTimers[ksId])
-      delete _pollTimers[ksId]
+    const timer = _pollTimers.get(ksId)
+    if (timer !== undefined) {
+      clearInterval(timer)
+      _pollTimers.delete(ksId)
     }
+  }
+
+  function stopAllPolling(): void {
+    _pollTimers.forEach((timer) => clearInterval(timer))
+    _pollTimers.clear()
   }
 
   return {
     knowledgeStores,
     documents,
+    loading,
+    error,
     loadKnowledgeStores,
     createKnowledgeStore,
     deleteKnowledgeStore,
@@ -163,5 +173,6 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     uploadDocument,
     deleteDocument,
     downloadDocument,
+    stopAllPolling,
   }
 })

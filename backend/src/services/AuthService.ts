@@ -2,6 +2,7 @@
 
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
+import { randomBytes } from 'crypto'
 import config from '../config'
 import { getAdapter, Entity } from '../db/DeltaDatabaseAdapter'
 import logger from '../logger'
@@ -15,13 +16,79 @@ export interface JwtPayload {
 
 const SALT_ROUNDS = 12
 
+// Duration of refresh token: 7 days in milliseconds
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
 export class AuthService {
+  /**
+   * Issue a short-lived access token (JWT) + a long-lived refresh token (opaque).
+   * The refresh token is stored in the DB. The caller must set it as an HttpOnly cookie.
+   */
+  async _issueTokenPair(user: Entity): Promise<{ accessToken: string; refreshToken: string }> {
+    const accessToken = this.generateToken(user)
+    const db = getAdapter()
+    const id = randomBytes(64).toString('hex')
+    await db.createRefreshToken({
+      id,
+      userId: user.id,
+      expiresAt: Date.now() + REFRESH_TOKEN_TTL_MS,
+      revokedAt: null,
+    })
+    return { accessToken, refreshToken: id }
+  }
+
+  /**
+   * Validate a refresh token from the DB. Returns the user if valid, throws otherwise.
+   */
+  async validateAndRotateRefreshToken(
+    incomingToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string; user: Entity }> {
+    const db = getAdapter()
+    const record = await db.getRefreshToken(incomingToken)
+    if (!record) {
+      const err: any = new Error('Invalid refresh token')
+      err.status = 401
+      throw err
+    }
+    if (record['revokedAt']) {
+      const err: any = new Error('Refresh token has been revoked')
+      err.status = 401
+      throw err
+    }
+    if ((record['expiresAt'] as number) < Date.now()) {
+      await db.updateRefreshToken(incomingToken, { revokedAt: Date.now() })
+      const err: any = new Error('Refresh token has expired')
+      err.status = 401
+      throw err
+    }
+
+    const user = await db.getUserById(record['userId'] as string)
+    if (!user || user['disabled']) {
+      const err: any = new Error('User not found or disabled')
+      err.status = 401
+      throw err
+    }
+
+    // Rotate: revoke old token, issue new pair
+    await db.updateRefreshToken(incomingToken, { revokedAt: Date.now() })
+    const { accessToken, refreshToken } = await this._issueTokenPair(user)
+    return { accessToken, refreshToken, user }
+  }
+
+  /**
+   * Revoke a specific refresh token (on logout).
+   */
+  async revokeRefreshToken(token: string): Promise<void> {
+    const db = getAdapter()
+    await db.updateRefreshToken(token, { revokedAt: Date.now() })
+  }
+
   /** Register a new user with email + password. First user automatically becomes admin. */
   async register(
     email: string,
     password: string,
     name: string,
-  ): Promise<{ token: string; user: Entity }> {
+  ): Promise<{ accessToken: string; refreshToken: string; user: Entity }> {
     const db = getAdapter()
     const existing = await db.getUserByEmail(email)
     if (existing) {
@@ -50,12 +117,15 @@ export class AuthService {
     })
 
     logger.info(`[Auth] User registered: ${email} (role: ${role})`)
-    const token = this.generateToken(user)
-    return { token, user: this._sanitizeUser(user) }
+    const { accessToken, refreshToken } = await this._issueTokenPair(user)
+    return { accessToken, refreshToken, user: this._sanitizeUser(user) }
   }
 
   /** Authenticate with email + password. */
-  async login(email: string, password: string): Promise<{ token: string; user: Entity }> {
+  async login(
+    email: string,
+    password: string,
+  ): Promise<{ accessToken: string; refreshToken: string; user: Entity }> {
     const db = getAdapter()
     const user = await db.getUserByEmail(email)
     if (!user) {
@@ -84,12 +154,14 @@ export class AuthService {
     }
 
     logger.info(`[Auth] User logged in: ${email}`)
-    const token = this.generateToken(user)
-    return { token, user: this._sanitizeUser(user) }
+    const { accessToken, refreshToken } = await this._issueTokenPair(user)
+    return { accessToken, refreshToken, user: this._sanitizeUser(user) }
   }
 
   /** Authenticate / register via Google ID token. */
-  async googleAuth(idToken: string): Promise<{ token: string; user: Entity }> {
+  async googleAuth(
+    idToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string; user: Entity }> {
     if (!config.google.clientId) {
       const err: any = new Error('Google authentication is not configured')
       err.status = 501
@@ -156,8 +228,8 @@ export class AuthService {
     }
 
     logger.info(`[Auth] Google login: ${user['email']}`)
-    const token = this.generateToken(user)
-    return { token, user: this._sanitizeUser(user) }
+    const { accessToken, refreshToken } = await this._issueTokenPair(user)
+    return { accessToken, refreshToken, user: this._sanitizeUser(user) }
   }
 
   /** Verify and decode a JWT token. */

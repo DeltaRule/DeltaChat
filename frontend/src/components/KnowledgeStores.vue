@@ -139,7 +139,7 @@
 
     <!-- Create dialog -->
     <Dialog :open="showCreateDialog" @update:open="showCreateDialog = $event">
-      <DialogContent class="max-w-sm">
+      <DialogContent class="max-w-md">
         <DialogHeader>
           <DialogTitle>Create Knowledge Store</DialogTitle>
           <DialogDescription>Add a new knowledge base for your documents.</DialogDescription>
@@ -152,6 +152,60 @@
           <div>
             <Label class="mb-1.5 block text-xs">Description (optional)</Label>
             <Textarea v-model="newDesc" placeholder="Description…" rows="2" />
+          </div>
+
+          <!-- Pipeline config (step 2 / advanced) -->
+          <div class="border border-border rounded-md">
+            <button
+              type="button"
+              class="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+              @click="showAdvanced = !showAdvanced"
+            >
+              <span>Pipeline settings (optional)</span>
+              <ChevronDown
+                :class="['h-3.5 w-3.5 transition-transform', showAdvanced ? 'rotate-180' : '']"
+              />
+            </button>
+            <div v-if="showAdvanced" class="px-3 pb-3 space-y-3 border-t border-border pt-3">
+              <div>
+                <Label class="mb-1.5 block text-xs">Embedding model</Label>
+                <Select v-model="newEmbeddingModelId">
+                  <SelectTrigger class="h-8 text-xs">
+                    <SelectValue placeholder="Use default" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Use default</SelectItem>
+                    <SelectItem v-for="m in embeddingModels" :key="m.id" :value="m.id">
+                      {{ m.name }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <Label class="mb-1.5 block text-xs">Chunk size</Label>
+                  <Input
+                    v-model.number="newChunkSize"
+                    type="number"
+                    min="64"
+                    max="8192"
+                    placeholder="512"
+                    class="h-8 text-xs"
+                  />
+                </div>
+                <div>
+                  <Label class="mb-1.5 block text-xs">Chunk overlap</Label>
+                  <Input
+                    v-model.number="newChunkOverlap"
+                    type="number"
+                    min="0"
+                    max="2048"
+                    placeholder="64"
+                    class="h-8 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <DialogFooter>
@@ -167,6 +221,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useKnowledgeStore } from '../stores/knowledge'
 import { useNotificationStore } from '../stores/notification'
+import { useModelsStore } from '../stores/models'
 import type { KnowledgeStore as KnowledgeStoreType } from '../types'
 import { Button } from './ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
@@ -182,18 +237,26 @@ import {
   DialogDescription,
   DialogFooter,
 } from './ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { ScrollArea } from './ui/scroll-area'
-import { Database, Plus, Trash2, Upload, FileText } from 'lucide-vue-next'
+import { Database, Plus, Trash2, Upload, FileText, ChevronDown } from 'lucide-vue-next'
 
 const knowledgeStore = useKnowledgeStore()
+const modelsStore = useModelsStore()
 const notify = useNotificationStore()
 
 const selected = ref<KnowledgeStoreType | null>(null)
 const dragging = ref(false)
 const showCreateDialog = ref(false)
+const showAdvanced = ref(false)
 const newName = ref('')
 const newDesc = ref('')
+const newEmbeddingModelId = ref('')
+const newChunkSize = ref<number | undefined>(undefined)
+const newChunkOverlap = ref<number | undefined>(undefined)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+const embeddingModels = computed(() => modelsStore.aiModels.filter((m) => m.type === 'embedding'))
 
 const docs = computed(() =>
   selected.value ? knowledgeStore.documents[selected.value.id] || [] : [],
@@ -201,9 +264,15 @@ const docs = computed(() =>
 
 function statusBadge(status: string) {
   return (
-    ({ ready: 'success', processing: 'warning', failed: 'destructive' } as Record<string, string>)[
-      status
-    ] || 'outline'
+    (
+      {
+        ready: 'success',
+        indexed: 'success',
+        processing: 'warning',
+        failed: 'destructive',
+        error: 'destructive',
+      } as Record<string, string>
+    )[status] || 'outline'
   )
 }
 
@@ -224,10 +293,18 @@ async function deleteStore(ks: KnowledgeStoreType) {
 
 async function createStore() {
   try {
-    await knowledgeStore.createKnowledgeStore(newName.value, newDesc.value)
+    await knowledgeStore.createKnowledgeStore(newName.value, newDesc.value, {
+      embeddingModelId: newEmbeddingModelId.value || null,
+      chunkSize: newChunkSize.value ?? null,
+      chunkOverlap: newChunkOverlap.value ?? null,
+    })
     showCreateDialog.value = false
+    showAdvanced.value = false
     newName.value = ''
     newDesc.value = ''
+    newEmbeddingModelId.value = ''
+    newChunkSize.value = undefined
+    newChunkOverlap.value = undefined
     notify.success('Knowledge store created')
   } catch {
     /* notification already shown by store */
@@ -267,5 +344,6 @@ async function onFileSelect(e: Event) {
 
 onMounted(() => {
   knowledgeStore.loadKnowledgeStores()
+  modelsStore.loadModels()
 })
 </script>

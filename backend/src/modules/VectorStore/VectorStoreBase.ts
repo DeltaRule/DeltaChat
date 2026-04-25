@@ -7,33 +7,26 @@ export interface VectorResult {
 }
 
 abstract class VectorStoreBase {
-  async upsert(
-    _id: string,
-    _vector: number[],
-    _metadata: Record<string, unknown>,
-  ): Promise<{ id: string }> {
-    throw new Error(`${this.constructor.name} must implement upsert(id, vector, metadata)`)
-  }
+  abstract upsert(
+    id: string,
+    vector: number[],
+    metadata: Record<string, unknown>,
+  ): Promise<{ id: string }>
 
-  async query(
-    _vector: number[],
-    _topK: number,
-    _filter?: Record<string, unknown>,
-  ): Promise<VectorResult[]> {
-    throw new Error(`${this.constructor.name} must implement query(vector, topK, filter)`)
-  }
+  abstract query(
+    vector: number[],
+    topK: number,
+    filter?: Record<string, unknown>,
+  ): Promise<VectorResult[]>
 
-  async delete(_id: string): Promise<{ ok: boolean }> {
-    throw new Error(`${this.constructor.name} must implement delete(id)`)
-  }
+  abstract delete(id: string): Promise<{ ok: boolean }>
 
-  async createCollection(_name: string): Promise<{ name: string }> {
-    throw new Error(`${this.constructor.name} must implement createCollection(name)`)
-  }
+  abstract createCollection(name: string): Promise<{ name: string }>
 
-  async deleteCollection(_name: string): Promise<{ ok: boolean }> {
-    throw new Error(`${this.constructor.name} must implement deleteCollection(name)`)
-  }
+  abstract deleteCollection(name: string): Promise<{ ok: boolean }>
+
+  /** Switch the active collection. Required for per-knowledge-store vector isolation. */
+  abstract useCollection(name: string): Promise<void>
 }
 
 export default VectorStoreBase

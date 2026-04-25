@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import axios from 'axios'
 import { getAdapter, DeltaDatabaseAdapter, Entity } from '../db/DeltaDatabaseAdapter'
 import logger from '../logger'
+import { isAllowedExternalUrl } from '../utils/ssrf'
 
 interface AppError extends Error {
   status?: number
@@ -31,9 +32,15 @@ class WebhookService {
 
   // ── CRUD ───────────────────────────────────────────────────────────────────
 
-  async register(data: Record<string, unknown> = {}): Promise<Entity> {
+  async createWebhook(data: Record<string, unknown> = {}): Promise<Entity> {
     if (!data['url']) {
       const err: AppError = new Error('url is required')
+      err.status = 400
+      throw err
+    }
+    const webhookUrl = data['url'] as string
+    if (!isAllowedExternalUrl(webhookUrl)) {
+      const err: AppError = new Error('webhook url must point to an external network address')
       err.status = 400
       throw err
     }
@@ -46,14 +53,15 @@ class WebhookService {
       headers: (data['headers'] as Record<string, string> | undefined) ?? {},
       secret: (data['secret'] as string | null | undefined) ?? null,
       enabled: data['enabled'] !== false,
+      ownerId: (data['ownerId'] as string | null | undefined) ?? null,
     })
   }
 
-  async list(): Promise<Entity[]> {
+  async listWebhooks(): Promise<Entity[]> {
     return this._db.listWebhooks()
   }
 
-  async get(id: string): Promise<Entity> {
+  async getWebhook(id: string): Promise<Entity> {
     const wh = await this._db.getWebhook(id)
     if (!wh) {
       const err: AppError = new Error(`Webhook not found: ${id}`)
@@ -63,13 +71,13 @@ class WebhookService {
     return wh
   }
 
-  async update(id: string, fields: Record<string, unknown>): Promise<Entity | null> {
-    await this.get(id)
+  async updateWebhook(id: string, fields: Record<string, unknown>): Promise<Entity | null> {
+    await this.getWebhook(id)
     return this._db.updateWebhook(id, fields)
   }
 
-  async delete(id: string): Promise<unknown> {
-    await this.get(id)
+  async deleteWebhook(id: string): Promise<unknown> {
+    await this.getWebhook(id)
     return this._db.deleteWebhook(id)
   }
 

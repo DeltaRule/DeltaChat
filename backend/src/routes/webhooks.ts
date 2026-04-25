@@ -7,7 +7,9 @@ const router = Router()
 // POST /api/webhooks
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const webhook = await req.services.webhookService.register(req.body as Record<string, unknown>)
+    const webhook = await req.services.webhookService.createWebhook(
+      req.body as Record<string, unknown>,
+    )
     res.status(201).json(webhook)
   } catch (err) {
     next(err)
@@ -17,7 +19,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 // GET /api/webhooks
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const webhooks = await req.services.webhookService.list()
+    const webhooks = await req.services.webhookService.listWebhooks()
     res.json(webhooks)
   } catch (err) {
     next(err)
@@ -27,7 +29,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 // GET /api/webhooks/:id
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const webhook = await req.services.webhookService.get(req.params.id as string)
+    const webhook = await req.services.webhookService.getWebhook(req.params.id as string)
     res.json(webhook)
   } catch (err) {
     next(err)
@@ -37,7 +39,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
 // PUT /api/webhooks/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const webhook = await req.services.webhookService.update(
+    const webhook = await req.services.webhookService.updateWebhook(
       req.params.id as string,
       req.body as Record<string, unknown>,
     )
@@ -50,7 +52,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 // DELETE /api/webhooks/:id
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await req.services.webhookService.delete(req.params.id as string)
+    await req.services.webhookService.deleteWebhook(req.params.id as string)
     res.json({ ok: true })
   } catch (err) {
     next(err)

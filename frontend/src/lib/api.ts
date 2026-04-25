@@ -1,35 +1,60 @@
 import axios from 'axios'
+import { useAuthStore } from '../stores/auth'
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
   timeout: 30000,
+  withCredentials: true, // Required so the browser sends the HttpOnly refresh cookie
 })
 
-// Attach JWT token to all requests
+// Attach JWT access token from Pinia store — not from localStorage
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('deltachat-token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  try {
+    const auth = useAuthStore()
+    if (auth.token) {
+      config.headers.Authorization = `Bearer ${auth.token}`
+    }
+  } catch {
+    /* store not ready yet during bootstrap */
   }
   return config
 })
 
-// On 401, clear auth and redirect to login; show network errors as notifications
+// On 401, attempt one silent token refresh then retry the original request.
+// If refresh fails, call logout and redirect to /login.
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/')) {
-      localStorage.removeItem('deltachat-token')
-      localStorage.removeItem('deltachat-user')
+  async (error) => {
+    // Skip refresh loop for auth requests themselves
+    const isAuthEndpoint = error.config?.url?.includes('/auth/')
+    if (error.response?.status === 401 && !error.config?._retry && !isAuthEndpoint) {
+      error.config._retry = true
+      try {
+        const { useAuthStore } = await import('../stores/auth')
+        const auth = useAuthStore()
+        const ok = await auth.refreshAccessToken()
+        if (ok) {
+          error.config.headers['Authorization'] = `Bearer ${auth.token}`
+          return api(error.config)
+        }
+      } catch {
+        /* refresh failed */
+      }
+      // Refresh failed → clear auth and redirect
+      try {
+        const { useAuthStore } = await import('../stores/auth')
+        await useAuthStore().logout()
+      } catch {
+        /* ignore */
+      }
       if (window.location.pathname !== '/login') {
         window.location.href = '/login'
       }
     }
-    // Network errors (no response) — show a user-visible notification
+    // Network errors — show a user-visible notification
     if (!error.response && error.message) {
-      // Lazy-import to avoid circular dependency during app bootstrap
       import('../stores/notification')
         .then(({ useNotificationStore }) => {
           try {

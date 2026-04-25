@@ -17,6 +17,7 @@ import AzureOpenAIProvider from '../modules/ModelProvider/AzureOpenAIProvider'
 import MistralProvider from '../modules/ModelProvider/MistralProvider'
 import DeepSeekProvider from '../modules/ModelProvider/DeepSeekProvider'
 import CohereProvider from '../modules/ModelProvider/CohereProvider'
+import WebhookProvider from '../modules/ModelProvider/WebhookProvider'
 import type KnowledgeService from './KnowledgeService'
 import type ToolExecutionService from './ToolExecutionService'
 import config from '../config'
@@ -80,6 +81,22 @@ interface ToolEntity {
   type: 'mcp' | 'python' | 'typescript'
   config: Record<string, unknown>
   enabled?: boolean
+}
+
+interface ToolCallEntry {
+  id: string
+  name: string
+  arguments: Record<string, unknown>
+  result: string
+  error?: string
+}
+
+interface ToolRunResult {
+  content: string
+  model?: string
+  usage?: Record<string, unknown>
+  finishReason?: string
+  toolCallLog: ToolCallEntry[]
 }
 
 /** Cache of provider instances keyed by provider name */
@@ -313,16 +330,17 @@ class ChatService {
     )
 
     const provider = await this._resolveProvider(opts, chat, resolved.providerOverride)
-    const result = await this._runWithTools(provider, messages, resolved)
+    const toolRun = await this._runWithTools(provider, messages, resolved)
 
     const assistantMessage = await this._db.createMessage({
       id: randomUUID(),
       chatId,
       role: 'assistant',
-      content: result.content,
-      model: result.model,
-      usage: result.usage,
+      content: toolRun.content,
+      model: toolRun.model,
+      usage: toolRun.usage,
       sources: sources.length > 0 ? sources : null,
+      toolCalls: toolRun.toolCallLog.length > 0 ? toolRun.toolCallLog : null,
     })
 
     if (chat.messages.length === 0 && !(chat['title'] as string | undefined)?.trim()) {
@@ -363,11 +381,13 @@ class ChatService {
     const provider = await this._resolveProvider(opts, chat, resolved.providerOverride)
 
     let full = ''
+    let toolCallLog: ToolCallEntry[] = []
     try {
       if (resolved.toolIds.length > 0) {
-        const toolResult = await this._runWithTools(provider, messages, resolved)
-        full = toolResult.content
-        if (full) onChunk(full)
+        const toolRun = await this._runWithTools(provider, messages, resolved, onChunk)
+        full = toolRun.content
+        toolCallLog = toolRun.toolCallLog
+        // chunks were emitted inside _runWithTools via onChunk
       } else {
         for await (const chunk of provider.stream(messages, resolved.modelOpts)) {
           full += chunk
@@ -384,6 +404,7 @@ class ChatService {
           | string
           | null,
         sources: sources.length > 0 ? sources : null,
+        toolCalls: toolCallLog.length > 0 ? toolCallLog : null,
       })
 
       onDone(full, assistantMessage, sources.length > 0 ? sources : undefined)
@@ -510,6 +531,17 @@ class ChatService {
     if (modelId) {
       try {
         const aiModel = await this._db.getAiModel(modelId)
+        // G-B19: Handle webhook-type models by instantiating WebhookProvider directly
+        if (aiModel?.['type'] === 'webhook' && aiModel['webhookId']) {
+          const webhook = await this._db.getWebhook(aiModel['webhookId'] as string)
+          if (webhook) {
+            return new WebhookProvider({
+              url: webhook['url'] as string,
+              name: aiModel['name'] as string,
+              headers: (webhook['headers'] as Record<string, string> | undefined) ?? {},
+            })
+          }
+        }
         if (aiModel?.['provider']) {
           return await buildProvider(aiModel['provider'] as string, this._db)
         }
@@ -602,20 +634,35 @@ class ChatService {
     provider: ModelProviderBase,
     baseMessages: ModelChatMessage[],
     resolved: ResolvedModelConfig,
-  ): Promise<ChatResult> {
+    onProgress?: (chunk: string) => void,
+  ): Promise<ToolRunResult> {
     if (!resolved.toolIds.length) {
-      return provider.chat(baseMessages, resolved.modelOpts)
+      const r = await provider.chat(baseMessages, resolved.modelOpts)
+      return {
+        content: r.content,
+        model: r.model,
+        usage: r.usage,
+        finishReason: r.finishReason,
+        toolCallLog: [],
+      }
     }
 
     const tools = await this._resolveTools(resolved.toolIds)
     if (!tools.length) {
-      return provider.chat(baseMessages, resolved.modelOpts)
+      const r = await provider.chat(baseMessages, resolved.modelOpts)
+      return {
+        content: r.content,
+        model: r.model,
+        usage: r.usage,
+        finishReason: r.finishReason,
+        toolCallLog: [],
+      }
     }
 
     if (provider.supportsTools()) {
-      return this._runNativeToolLoop(provider, baseMessages, resolved.modelOpts, tools)
+      return this._runNativeToolLoop(provider, baseMessages, resolved.modelOpts, tools, onProgress)
     }
-    return this._runPromptToolLoop(provider, baseMessages, resolved.modelOpts, tools)
+    return this._runPromptToolLoop(provider, baseMessages, resolved.modelOpts, tools, onProgress)
   }
 
   private async _resolveTools(toolIds: string[]): Promise<ToolEntity[]> {
@@ -691,7 +738,8 @@ class ChatService {
     baseMessages: ModelChatMessage[],
     modelOpts: Record<string, unknown>,
     tools: ToolEntity[],
-  ): Promise<ChatResult> {
+    onProgress?: (chunk: string) => void,
+  ): Promise<ToolRunResult> {
     if (!this._toolExecutionService) {
       throw Object.assign(new Error('Tool execution service is unavailable'), { status: 500 })
     }
@@ -708,12 +756,40 @@ class ChatService {
 
     const messages: ModelChatMessage[] = [...baseMessages]
     const optsWithTools = { ...modelOpts, tools: toolDefs }
+    const toolCallLog: ToolCallEntry[] = []
 
     for (let i = 0; i < 6; i += 1) {
       const result = await provider.chat(messages, optsWithTools)
 
       if (!result.toolCalls?.length) {
-        return result
+        // Final answer — stream it if a progress callback was supplied
+        if (onProgress) {
+          let finalContent = ''
+          try {
+            for await (const chunk of provider.stream(messages, modelOpts)) {
+              finalContent += chunk
+              onProgress(chunk)
+            }
+          } catch {
+            // Provider doesn't support streaming — emit the already-fetched content
+            finalContent = result.content
+            if (finalContent) onProgress(finalContent)
+          }
+          return {
+            content: finalContent || result.content,
+            model: result.model,
+            usage: result.usage,
+            finishReason: result.finishReason,
+            toolCallLog,
+          }
+        }
+        return {
+          content: result.content,
+          model: result.model,
+          usage: result.usage,
+          finishReason: result.finishReason,
+          toolCallLog,
+        }
       }
 
       // Add assistant message with tool calls
@@ -723,20 +799,32 @@ class ChatService {
         toolCalls: result.toolCalls,
       })
 
-      // Execute each tool call and add results
+      // Execute each tool call and collect results
       for (const call of result.toolCalls) {
         const tool = toolByName.get(call.name.toLowerCase())
+        const entry: ToolCallEntry = {
+          id: call.id,
+          name: call.name,
+          arguments: call.arguments,
+          result: '',
+        }
         let output: string
         if (!tool) {
           output = JSON.stringify({ ok: false, error: `Unknown tool: ${call.name}` })
+          entry.result = output
+          entry.error = `Unknown tool: ${call.name}`
         } else {
           try {
-            const result = await this._toolExecutionService!.executeTool(tool, call.arguments)
-            output = typeof result === 'string' ? result : JSON.stringify(result)
+            const execResult = await this._toolExecutionService!.executeTool(tool, call.arguments)
+            output = typeof execResult === 'string' ? execResult : JSON.stringify(execResult)
+            entry.result = output
           } catch (err) {
             output = JSON.stringify({ ok: false, error: (err as Error).message })
+            entry.result = output
+            entry.error = (err as Error).message
           }
         }
+        toolCallLog.push(entry)
 
         messages.push({
           role: 'tool',
@@ -754,7 +842,8 @@ class ChatService {
     baseMessages: ModelChatMessage[],
     modelOpts: Record<string, unknown>,
     tools: ToolEntity[],
-  ): Promise<ChatResult> {
+    onProgress?: (chunk: string) => void,
+  ): Promise<ToolRunResult> {
     if (!this._toolExecutionService) {
       throw Object.assign(new Error('Tool execution service is unavailable'), { status: 500 })
     }
@@ -762,6 +851,7 @@ class ChatService {
     const toolByName = new Map(tools.map((t) => [t.name.toLowerCase(), t]))
     const messages: ModelChatMessage[] = [...baseMessages]
     const toolPrompt = this._buildToolPrompt(tools)
+    const toolCallLog: ToolCallEntry[] = []
 
     if (messages[0]?.role === 'system') {
       messages[0] = {
@@ -776,31 +866,50 @@ class ChatService {
       const result = await provider.chat(messages, modelOpts)
       const toolCalls = this._extractToolCalls(result.content)
       if (!toolCalls.length) {
-        return result
+        // Final answer — stream it if a progress callback was supplied
+        if (onProgress) {
+          let finalContent = ''
+          try {
+            for await (const chunk of provider.stream(messages, modelOpts)) {
+              finalContent += chunk
+              onProgress(chunk)
+            }
+          } catch {
+            finalContent = result.content
+            if (finalContent) onProgress(finalContent)
+          }
+          return { content: finalContent || result.content, toolCallLog }
+        }
+        return { content: result.content, toolCallLog }
       }
 
       const executed: Array<Record<string, unknown>> = []
       for (const call of toolCalls) {
         const tool = toolByName.get(call.name.toLowerCase())
+        const entry: ToolCallEntry = {
+          id: call.id,
+          name: call.name,
+          arguments: call.arguments,
+          result: '',
+        }
         if (!tool) {
-          executed.push({
-            tool: call.name,
-            ok: false,
-            error: `Unknown tool: ${call.name}`,
-          })
-          continue
+          const out = JSON.stringify({ ok: false, error: `Unknown tool: ${call.name}` })
+          executed.push({ tool: call.name, ok: false, error: `Unknown tool: ${call.name}` })
+          entry.result = out
+          entry.error = `Unknown tool: ${call.name}`
+        } else {
+          try {
+            const output = await this._toolExecutionService.executeTool(tool, call.arguments)
+            const outStr = typeof output === 'string' ? output : JSON.stringify(output)
+            executed.push({ tool: tool.name, ok: true, output })
+            entry.result = outStr
+          } catch (err) {
+            executed.push({ tool: tool.name, ok: false, error: (err as Error).message })
+            entry.result = JSON.stringify({ ok: false, error: (err as Error).message })
+            entry.error = (err as Error).message
+          }
         }
-
-        try {
-          const output = await this._toolExecutionService.executeTool(tool, call.arguments)
-          executed.push({ tool: tool.name, ok: true, output })
-        } catch (err) {
-          executed.push({
-            tool: tool.name,
-            ok: false,
-            error: (err as Error).message,
-          })
-        }
+        toolCallLog.push(entry)
       }
 
       messages.push({ role: 'assistant', content: result.content })

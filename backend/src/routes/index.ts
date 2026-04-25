@@ -5,7 +5,7 @@ import ChatService from '../services/ChatService'
 import KnowledgeService from '../services/KnowledgeService'
 import WebhookService from '../services/WebhookService'
 import McpService from '../services/McpService'
-import ToolExecutionService from '../services/ToolExecutionService'
+import { ToolExecutionService } from '../services/ToolExecutionService'
 import { getAdapter } from '../db/DeltaDatabaseAdapter'
 
 import { requireAuth } from '../middleware/auth'
@@ -31,6 +31,10 @@ const webhookService = new WebhookService()
 const mcpService = new McpService()
 
 chatService.setKnowledgeService(knowledgeService)
+
+// Export shared singletons for use in WebSocket path (server.ts) so that per-socket
+// code doesn't create new instances on every event — resolves G-B13.
+export { chatService, knowledgeService, webhookService, mcpService }
 
 // Service injection — available to all subsequent routes
 router.use(async (req: Request, _res: Response, next: NextFunction) => {

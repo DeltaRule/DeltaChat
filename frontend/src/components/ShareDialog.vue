@@ -147,12 +147,12 @@ import { useUserGroupsStore } from '../stores/userGroups'
 
 import type { Share } from '../types'
 
-const props = defineProps({
-  open: Boolean,
-  resourceType: String,
-  resourceId: String,
-  resourceLabel: { type: String, default: 'Resource' },
-})
+const props = defineProps<{
+  open: boolean
+  resourceType: string
+  resourceId: string
+  resourceLabel?: string
+}>()
 
 const emit = defineEmits(['update:open'])
 

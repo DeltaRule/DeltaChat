@@ -57,8 +57,18 @@ export const useMcpConnectionsStore = defineStore('mcpConnections', () => {
   async function testConnection(
     serverUrl: string,
     connectionId?: string,
+    apiKey?: string,
   ): Promise<{ ok: boolean; tools: { name: string; description?: string }[]; error?: string }> {
-    return mcpTestConnection(serverUrl, connectionId)
+    return mcpTestConnection(serverUrl, connectionId, apiKey)
+  }
+
+  async function loadConnectionTools(
+    connectionId: string,
+  ): Promise<{ name: string; description?: string; inputSchema?: Record<string, unknown> }[]> {
+    const { data } = await api.get<{
+      tools: { name: string; description?: string; inputSchema?: Record<string, unknown> }[]
+    }>(`/mcp-connections/${connectionId}/tools`)
+    return data.tools ?? []
   }
 
   return {
@@ -68,5 +78,6 @@ export const useMcpConnectionsStore = defineStore('mcpConnections', () => {
     updateConnection,
     deleteConnection,
     testConnection,
+    loadConnectionTools,
   }
 })

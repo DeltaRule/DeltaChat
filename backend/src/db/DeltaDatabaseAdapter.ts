@@ -532,7 +532,7 @@ export class DeltaDatabaseAdapter {
 
   // Users
   createUser(doc: Record<string, unknown>): Promise<Entity> {
-    return this._backend.insert('users', doc)
+    return this._backend.insert('users', doc, ['email', 'googleId'])
   }
   listUsers(): Promise<Entity[]> {
     return this._backend.findAll('users')
@@ -548,11 +548,20 @@ export class DeltaDatabaseAdapter {
   }
 
   async getUserByEmail(email: string): Promise<Entity | null> {
+    const normalised = email.toLowerCase()
+    // Use secondary index if available; fall back to full scan
+    const indexed = await this._backend.query('users', { email: normalised }, 1)
+    if (indexed.length > 0) return indexed[0]
+    // Fallback for legacy records stored before index was added
     const all = await this._backend.findAll('users')
-    return all.find((u) => (u['email'] as string)?.toLowerCase() === email.toLowerCase()) ?? null
+    return all.find((u) => (u['email'] as string)?.toLowerCase() === normalised) ?? null
   }
 
   async getUserByGoogleId(googleId: string): Promise<Entity | null> {
+    // Use secondary index if available; fall back to full scan
+    const indexed = await this._backend.query('users', { googleId }, 1)
+    if (indexed.length > 0) return indexed[0]
+    // Fallback for legacy records stored before index was added
     const all = await this._backend.findAll('users')
     return all.find((u) => u['googleId'] === googleId) ?? null
   }
@@ -620,6 +629,29 @@ export class DeltaDatabaseAdapter {
   async deleteResourceSharesByTarget(targetType: string, targetId: string): Promise<void> {
     const shares = await this.getResourceSharesForTarget(targetType, targetId)
     for (const s of shares) await this.deleteResourceShare(s.id)
+  }
+
+  // Refresh Tokens
+  createRefreshToken(doc: Record<string, unknown>): Promise<Entity> {
+    return this._backend.insert('refresh_tokens', doc, ['userId'])
+  }
+
+  getRefreshToken(id: string): Promise<Entity | null> {
+    return this._backend.findById('refresh_tokens', id)
+  }
+
+  updateRefreshToken(id: string, fields: Record<string, unknown>): Promise<Entity | null> {
+    return this._backend.update('refresh_tokens', id, fields)
+  }
+
+  async deleteExpiredRefreshTokens(): Promise<void> {
+    const all = await this._backend.findAll('refresh_tokens')
+    const now = Date.now()
+    for (const t of all) {
+      if ((t['expiresAt'] as number) < now) {
+        await this._backend.delete('refresh_tokens', t.id)
+      }
+    }
   }
 }
 

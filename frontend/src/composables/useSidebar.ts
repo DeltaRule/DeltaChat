@@ -72,10 +72,12 @@ export function provideSidebar(defaultOpen = true) {
   onMounted(() => {
     onResize()
     window.addEventListener('resize', onResize)
+    window.addEventListener('keydown', onKeyDown)
   })
 
   onUnmounted(() => {
     window.removeEventListener('resize', onResize)
+    window.removeEventListener('keydown', onKeyDown)
   })
 
   const context = {

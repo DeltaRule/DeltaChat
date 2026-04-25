@@ -5,13 +5,12 @@ import { Server as SocketIOServer } from 'socket.io'
 import app from './app'
 import config from './config'
 import logger from './logger'
-import ChatService from './services/ChatService'
-import KnowledgeService from './services/KnowledgeService'
-import WebhookService from './services/WebhookService'
-import McpService from './services/McpService'
 import { ToolExecutionService } from './services/ToolExecutionService'
 import { getAuthService } from './services/AuthService'
 import { getAdapter } from './db/DeltaDatabaseAdapter'
+import { migrateLegacyMcpServerUrl } from './utils/mcpMigration'
+// G-B13: Import shared service singletons — do NOT create new instances per socket event
+import { chatService, knowledgeService, webhookService, mcpService } from './routes/index'
 
 const server = http.createServer(app)
 
@@ -63,21 +62,22 @@ io.on('connection', (socket) => {
       })
     }
 
-    const knowledgeService = new KnowledgeService()
-    const chatService = new ChatService()
-    chatService.setKnowledgeService(knowledgeService)
-    const webhookService = new WebhookService()
-    const mcpService = new McpService()
+    // Use shared service singletons — no new instances per event (G-B13)
+    // Wire up ToolExecutionService with current settings from DB
 
     // Wire up tool execution so models with tools work over WebSocket
     try {
       const db = getAdapter()
       const settings = (await db.getSettings()) as Record<string, unknown>
       const executorsConfig = (settings['executors'] as Record<string, unknown>) || {}
-      const toolExecutionService = new ToolExecutionService(mcpService, {
-        python: executorsConfig['python'] as any,
-        typescript: executorsConfig['typescript'] as any,
-      })
+      const toolExecutionService = new ToolExecutionService(
+        mcpService,
+        {
+          python: executorsConfig['python'] as any,
+          typescript: executorsConfig['typescript'] as any,
+        },
+        socket,
+      )
       chatService.setToolExecutionService(toolExecutionService)
     } catch (e) {
       logger.warn('[WS] Failed to initialise ToolExecutionService:', e)
@@ -132,6 +132,9 @@ io.on('connection', (socket) => {
     const adapter = getAdapter()
     await adapter._backend.initSchemas()
     logger.info('[DeltaDB] All schemas registered successfully')
+
+    // ── Migrate MCP_SERVER_URL env var to DB connection ──────────────────
+    await migrateLegacyMcpServerUrl(adapter)
 
     // ── Migrate legacy data: assign orphaned entities to first admin ──
     try {

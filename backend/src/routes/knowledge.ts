@@ -6,9 +6,35 @@ import { getSharingService } from '../services/SharingService'
 
 const router = Router()
 
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'text/html',
+  'application/json',
+  'application/xml',
+  'text/xml',
+])
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(
+        new Error(
+          `File type "${file.mimetype}" is not permitted. Allowed types: PDF, Word, Excel, plain text, markdown, CSV, HTML, JSON, XML.`,
+        ),
+      )
+    }
+  },
 })
 
 // POST /api/knowledge-stores
@@ -58,7 +84,40 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const ks = await req.services.knowledgeService.getKnowledgeStore(req.params.id as string)
+    if (!ks) return res.status(404).json({ error: 'Knowledge store not found' })
+    const sharingService = getSharingService()
+    if (req.user!.role !== 'admin') {
+      const canAccess = await sharingService.canAccessResource(
+        req.user!.id,
+        'knowledge_store',
+        req.params.id as string,
+      )
+      if (!canAccess) return res.status(403).json({ error: 'Access denied' })
+    }
     res.json(ks)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// PUT /api/knowledge/:id — update store name, description, or pipeline config
+router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const ks = await req.services.knowledgeService.getKnowledgeStore(req.params.id as string)
+    if (!ks) return res.status(404).json({ error: 'Knowledge store not found' })
+    if (ks['ownerId'] && ks['ownerId'] !== req.user!.id && req.user!.role !== 'admin') {
+      return res
+        .status(403)
+        .json({ error: 'Only the owner or an admin can update this knowledge store' })
+    }
+    // Strip ownerId from caller-supplied body — ownership cannot be transferred via PUT
+    const body = req.body as Record<string, unknown>
+    const { ownerId: _drop, ...allowed } = body
+    const updated = await req.services.knowledgeService.updateKnowledgeStore(
+      req.params.id as string,
+      allowed,
+    )
+    res.json(updated)
   } catch (err) {
     next(err)
   }
@@ -142,13 +201,14 @@ router.get(
       )
       const storage = req.services.knowledgeService.getBinaryStorage()
       const { buffer, metadata } = await storage.retrieve(req.params.docId as string)
-      const filename = (doc['filename'] as string) || 'document'
+      const rawFilename = (doc['filename'] as string) || 'document'
+      const safeFilename = rawFilename.replace(/["\r\n\\]/g, '_')
       const mimeType =
         (metadata['mimeType'] as string) ||
         (doc['mimeType'] as string) ||
         'application/octet-stream'
       res.setHeader('Content-Type', mimeType)
-      res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
+      res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`)
       res.send(buffer)
     } catch (err) {
       next(err)

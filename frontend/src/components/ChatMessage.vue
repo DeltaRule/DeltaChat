@@ -58,6 +58,81 @@
         </div>
       </div>
 
+      <!-- Tool calls -->
+      <div v-if="!isUser && message.toolCalls?.length" class="mt-2 pt-2 border-t border-border/50">
+        <div
+          class="flex items-center gap-1 text-[0.65rem] text-muted-foreground/80 font-medium mb-1.5"
+        >
+          <Wrench class="h-3 w-3" />
+          Tools used
+        </div>
+        <div class="flex flex-col gap-1">
+          <div
+            v-for="(tc, i) in message.toolCalls"
+            :key="tc.id || i"
+            class="rounded-md border border-border/60 text-xs overflow-hidden"
+          >
+            <!-- Toggle header -->
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 px-2 py-1.5 bg-muted/40 hover:bg-muted/70 transition-colors text-left"
+              @click="toggleToolCall(tc.id || String(i))"
+            >
+              <span
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary font-mono text-[0.6rem] shrink-0"
+              >
+                <Wrench class="h-2.5 w-2.5" />
+                {{ tc.name }}
+              </span>
+              <span v-if="tc.error" class="text-[0.6rem] text-destructive truncate flex-1"
+                >Error</span
+              >
+              <span v-else class="text-[0.6rem] text-muted-foreground truncate flex-1"
+                >Result available</span
+              >
+              <ChevronDown
+                :class="[
+                  'h-3 w-3 text-muted-foreground shrink-0 transition-transform duration-150',
+                  expandedToolCalls.has(tc.id || String(i)) ? 'rotate-180' : '',
+                ]"
+              />
+            </button>
+
+            <!-- Expanded content -->
+            <div v-if="expandedToolCalls.has(tc.id || String(i))" class="divide-y divide-border/40">
+              <!-- Arguments -->
+              <div class="px-2 py-1.5">
+                <div
+                  class="text-[0.6rem] text-muted-foreground font-medium mb-1 uppercase tracking-wide"
+                >
+                  Input
+                </div>
+                <pre
+                  class="text-[0.65rem] leading-relaxed text-foreground/80 whitespace-pre-wrap break-all font-mono"
+                  >{{ JSON.stringify(tc.arguments, null, 2) }}</pre
+                >
+              </div>
+              <!-- Result -->
+              <div class="px-2 py-1.5">
+                <div
+                  class="text-[0.6rem] text-muted-foreground font-medium mb-1 uppercase tracking-wide"
+                >
+                  Output
+                </div>
+                <pre
+                  v-if="!tc.error"
+                  class="text-[0.65rem] leading-relaxed text-foreground/80 whitespace-pre-wrap break-all font-mono"
+                  >{{ formatToolResult(tc.result) }}</pre
+                >
+                <span v-else class="inline-flex items-center gap-1 text-[0.65rem] text-destructive">
+                  <AlertCircle class="h-3 w-3 shrink-0" />{{ tc.error }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div
         :class="[
           'text-[0.65rem] mt-1',
@@ -79,18 +154,45 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { marked } from 'marked'
-import { Bot, User, Loader2, Paperclip, FileText } from 'lucide-vue-next'
+import DOMPurify from 'dompurify'
+import {
+  Bot,
+  User,
+  Loader2,
+  Paperclip,
+  FileText,
+  Wrench,
+  ChevronDown,
+  AlertCircle,
+} from 'lucide-vue-next'
 import api from '@/lib/api'
 import type { ChatMessage, MessageSource } from '@/types'
-
-const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const props = defineProps<{
   message: ChatMessage
   isStreaming?: boolean
 }>()
+
+// ── Tool call expand/collapse ──
+const expandedToolCalls = ref(new Set<string>())
+function toggleToolCall(key: string) {
+  if (expandedToolCalls.value.has(key)) {
+    expandedToolCalls.value.delete(key)
+  } else {
+    expandedToolCalls.value.add(key)
+  }
+  // Trigger reactivity — replace the Set
+  expandedToolCalls.value = new Set(expandedToolCalls.value)
+}
+function formatToolResult(result: string): string {
+  try {
+    return JSON.stringify(JSON.parse(result), null, 2)
+  } catch {
+    return result
+  }
+}
 const isUser = computed(() => props.message.role === 'user')
 const uniqueSources = computed(() => {
   const srcs = props.message.sources
@@ -115,20 +217,51 @@ const attachmentNames = computed(() => {
 })
 const renderedContent = computed(() => {
   try {
-    return marked.parse(displayContent.value)
+    const raw = marked.parse(displayContent.value, { async: false }) as string
+    return DOMPurify.sanitize(raw, {
+      ALLOWED_TAGS: [
+        'p',
+        'br',
+        'strong',
+        'em',
+        'code',
+        'pre',
+        'ul',
+        'ol',
+        'li',
+        'blockquote',
+        'h1',
+        'h2',
+        'h3',
+        'h4',
+        'h5',
+        'h6',
+        'a',
+        'table',
+        'thead',
+        'tbody',
+        'tr',
+        'th',
+        'td',
+        'hr',
+        'img',
+      ],
+      ALLOWED_ATTR: ['href', 'src', 'alt', 'class', 'target'],
+      FORCE_BODY: true,
+    })
   } catch {
     return displayContent.value
   }
 })
 const formattedTime = computed(() => {
-  if (!props.message.createdAt && !props.message.id) return ''
-  const d = new Date(props.message.createdAt || Number(props.message.id))
+  if (!props.message.createdAt) return ''
+  const d = new Date(props.message.createdAt)
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 })
 
 async function downloadSource(src: MessageSource) {
   try {
-    const res = await api.get(`/knowledge-stores/${src.storeId}/documents/${src.docId}/download`, {
+    const res = await api.get(`/knowledge/${src.storeId}/documents/${src.docId}/download`, {
       responseType: 'blob',
     })
     const contentType = res.headers['content-type'] || 'application/octet-stream'

@@ -19,12 +19,7 @@
         <header
           class="sticky top-0 z-50 flex h-12 items-center border-b border-border bg-background/80 backdrop-blur-lg px-4 gap-3 shrink-0"
         >
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            class="-ml-1"
-            @click="isSettings ? router.push('/') : router.push('/')"
-          >
+          <Button variant="ghost" size="icon-sm" class="-ml-1" @click="router.push('/')">
             <div
               class="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm"
             >
@@ -95,23 +90,24 @@
 
         <!-- Content area -->
         <div class="flex-1 min-h-0 overflow-hidden relative">
-          <!-- Chat view -->
-          <div v-if="!isSettings && !isAdmin" key="chat-content" class="h-full">
-            <SidebarProvider v-slot="{ toggle }" class="min-h-0 h-full">
-              <SidebarToggleCapture :toggle="toggle" />
-              <AppNavigation />
-              <SidebarInset class="min-h-0">
-                <router-view />
-              </SidebarInset>
-            </SidebarProvider>
-          </div>
+          <Transition name="page" mode="out-in">
+            <!-- Chat view -->
+            <div v-if="!isSettings && !isAdmin" key="chat-content" class="h-full">
+              <SidebarProvider class="min-h-0 h-full">
+                <AppNavigation />
+                <SidebarInset class="min-h-0">
+                  <router-view />
+                </SidebarInset>
+              </SidebarProvider>
+            </div>
 
-          <!-- Settings / Admin view -->
-          <div v-else key="settings-content" class="h-full overflow-hidden">
-            <SidebarProvider class="min-h-0 h-full">
-              <router-view />
-            </SidebarProvider>
-          </div>
+            <!-- Settings / Admin view -->
+            <div v-else key="settings-content" class="h-full overflow-hidden">
+              <SidebarProvider class="min-h-0 h-full">
+                <router-view />
+              </SidebarProvider>
+            </div>
+          </Transition>
         </div>
       </TooltipProvider>
 
@@ -127,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, defineComponent, h, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Toaster } from 'vue-sonner'
 import { Sun, Moon, Settings, Triangle, Shield, UserCircle, LogOut } from 'lucide-vue-next'
@@ -143,33 +139,17 @@ import {
   DropdownMenuSeparator,
 } from './components/ui/dropdown-menu'
 import { useThemeStore } from './stores/theme'
-import { useNotificationStore } from './stores/notification'
 import { useAuthStore } from './stores/auth'
+import { useChatStore } from './stores/chat'
 import api, { API_URL } from './lib/api'
 
 const route = useRoute()
 const router = useRouter()
 const themeStore = useThemeStore()
-const notify = useNotificationStore()
 const authStore = useAuthStore()
+const chatStore = useChatStore()
 
 const connected = ref(false)
-const sidebarToggleFn = ref<Function | null>(null)
-
-// Invisible component to capture sidebar toggle function from scoped slot
-const SidebarToggleCapture = defineComponent({
-  props: { toggle: Function },
-  setup(props) {
-    watch(
-      () => props.toggle,
-      (fn) => {
-        sidebarToggleFn.value = fn ?? null
-      },
-      { immediate: true },
-    )
-    return () => null
-  },
-})
 
 const isSettings = computed(() => route.path.startsWith('/settings'))
 const isAdmin = computed(() => route.path.startsWith('/admin'))
@@ -181,8 +161,9 @@ function toggleSettings() {
   else router.push('/settings')
 }
 
-function handleLogout() {
-  authStore.logout()
+async function handleLogout() {
+  chatStore.disconnectSocket()
+  await authStore.logout()
   router.push('/login')
 }
 
@@ -195,7 +176,17 @@ async function checkConnection() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  authStore.loadFromStorage()
+  // Silently try to restore session via refresh token cookie.
+  // This re-hydrates the in-memory access token on page reload.
+  if (!authStore.token) {
+    await authStore.refreshAccessToken()
+  }
+  // Connect the socket now that the token is in memory
+  if (authStore.isAuthenticated) {
+    chatStore.reconnectSocket()
+  }
   checkConnection()
   interval = setInterval(checkConnection, 10000)
 })
@@ -203,3 +194,20 @@ onUnmounted(() => {
   clearInterval(interval)
 })
 </script>
+
+<style scoped>
+.page-enter-active,
+.page-leave-active {
+  transition:
+    opacity 0.18s ease-out,
+    transform 0.18s ease-out;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+</style>

@@ -13,14 +13,14 @@ export interface User {
 }
 
 export interface AuthResponse {
-  token: string
+  accessToken: string
   user: User
 }
 
 export interface AiModel {
   id: string
   name: string
-  type: 'chat' | 'model' | 'embedding' | 'agent' | 'webhook'
+  type: 'model' | 'embedding' | 'agent' | 'webhook'
   provider: string
   providerModel: string
   deploymentName?: string
@@ -71,6 +71,12 @@ export interface McpConnection {
   name: string
   serverUrl: string
   timeout?: number
+  /** 'server' = backend proxies calls to an external URL (default) | 'client' = browser calls localhost directly */
+  connectionScope?: 'server' | 'client'
+  /** 'http' = Streamable HTTP POST (default) | 'sse' = MCP SSE two-channel transport (server-scope only) */
+  transportType?: 'http' | 'sse'
+  /** Optional API key sent as Authorization: Bearer header to the MCP server */
+  apiKey?: string
   ownerId?: string
   createdAt?: string
   updatedAt?: string
@@ -111,6 +117,7 @@ export interface ChatMessage {
   content: string
   createdAt?: string
   sources?: MessageSource[]
+  toolCalls?: ToolCallEntry[]
 }
 
 export interface MessageSource {
@@ -119,6 +126,14 @@ export interface MessageSource {
   chunkId?: string
   filename?: string
   text?: string
+}
+
+export interface ToolCallEntry {
+  id: string
+  name: string
+  arguments: Record<string, unknown>
+  result: string
+  error?: string
 }
 
 export interface KnowledgeStore {

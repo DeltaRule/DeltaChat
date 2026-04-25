@@ -26,11 +26,11 @@ describe('WebhookService', () => {
     service = new WebhookService({ db: mockDb as unknown as DeltaDatabaseAdapter })
   })
 
-  // ── register ────────────────────────────────────────────────────────────────
+  // ── createWebhook ───────────────────────────────────────────────────────────
 
-  describe('register', () => {
+  describe('createWebhook', () => {
     test('throws 400 when url is missing', async () => {
-      await expect(service.register({})).rejects.toMatchObject({ status: 400 })
+      await expect(service.createWebhook({})).rejects.toMatchObject({ status: 400 })
     })
 
     test('creates a webhook with sensible defaults', async () => {
@@ -46,7 +46,7 @@ describe('WebhookService', () => {
       }
       mockDb.createWebhook.mockResolvedValue(stored)
 
-      const result = await service.register({ url: 'https://example.com' })
+      const result = await service.createWebhook({ url: 'https://example.com' })
 
       expect(mockDb.createWebhook).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -60,7 +60,7 @@ describe('WebhookService', () => {
 
     test('honours provided name, events, and secret', async () => {
       mockDb.createWebhook.mockResolvedValue({})
-      await service.register({
+      await service.createWebhook({
         name: 'My Hook',
         url: 'https://example.com',
         events: ['message.created', 'chat.deleted'],
@@ -76,58 +76,58 @@ describe('WebhookService', () => {
     })
   })
 
-  // ── list ────────────────────────────────────────────────────────────────────
+  // ── listWebhooks ─────────────────────────────────────────────────────────────
 
-  describe('list', () => {
+  describe('listWebhooks', () => {
     test('delegates to db.listWebhooks', async () => {
       const whs = [{ id: 'w1' }]
       mockDb.listWebhooks.mockResolvedValue(whs)
-      expect(await service.list()).toEqual(whs)
+      expect(await service.listWebhooks()).toEqual(whs)
     })
   })
 
-  // ── get ─────────────────────────────────────────────────────────────────────
+  // ── getWebhook ───────────────────────────────────────────────────────────────
 
-  describe('get', () => {
+  describe('getWebhook', () => {
     test('throws 404 when webhook is not found', async () => {
       mockDb.getWebhook.mockResolvedValue(null)
-      await expect(service.get('missing')).rejects.toMatchObject({ status: 404 })
+      await expect(service.getWebhook('missing')).rejects.toMatchObject({ status: 404 })
     })
 
     test('returns the webhook when found', async () => {
       const wh: Entity = { id: 'w1', url: 'https://example.com' }
       mockDb.getWebhook.mockResolvedValue(wh)
-      expect(await service.get('w1')).toEqual(wh)
+      expect(await service.getWebhook('w1')).toEqual(wh)
     })
   })
 
-  // ── update ───────────────────────────────────────────────────────────────────
+  // ── updateWebhook ─────────────────────────────────────────────────────────────
 
-  describe('update', () => {
+  describe('updateWebhook', () => {
     test('throws 404 when webhook is not found', async () => {
       mockDb.getWebhook.mockResolvedValue(null)
-      await expect(service.update('missing', {})).rejects.toMatchObject({ status: 404 })
+      await expect(service.updateWebhook('missing', {})).rejects.toMatchObject({ status: 404 })
     })
 
     test('calls db.updateWebhook with correct args', async () => {
       mockDb.getWebhook.mockResolvedValue({ id: 'w1' })
       mockDb.updateWebhook.mockResolvedValue({ id: 'w1', enabled: false })
-      await service.update('w1', { enabled: false })
+      await service.updateWebhook('w1', { enabled: false })
       expect(mockDb.updateWebhook).toHaveBeenCalledWith('w1', { enabled: false })
     })
   })
 
-  // ── delete ───────────────────────────────────────────────────────────────────
+  // ── deleteWebhook ─────────────────────────────────────────────────────────────
 
-  describe('delete', () => {
+  describe('deleteWebhook', () => {
     test('throws 404 when webhook is not found', async () => {
       mockDb.getWebhook.mockResolvedValue(null)
-      await expect(service.delete('missing')).rejects.toMatchObject({ status: 404 })
+      await expect(service.deleteWebhook('missing')).rejects.toMatchObject({ status: 404 })
     })
 
     test('calls db.deleteWebhook', async () => {
       mockDb.getWebhook.mockResolvedValue({ id: 'w1' })
-      await service.delete('w1')
+      await service.deleteWebhook('w1')
       expect(mockDb.deleteWebhook).toHaveBeenCalledWith('w1')
     })
   })

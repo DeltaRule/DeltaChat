@@ -7,13 +7,20 @@ import { getErrorMessage } from '../types'
 
 export const useAgentsStore = defineStore('agents', () => {
   const agents = ref<Agent[]>([])
+  const loading = ref(false)
+  const error = ref<string | null>(null)
 
   async function loadAgents(): Promise<void> {
+    loading.value = true
+    error.value = null
     try {
       const { data } = await api.get<Agent[]>('/agents')
       agents.value = data
     } catch (e: unknown) {
-      useNotificationStore().error(getErrorMessage(e, 'Failed to load agents'))
+      error.value = getErrorMessage(e, 'Failed to load agents')
+      useNotificationStore().error(error.value)
+    } finally {
+      loading.value = false
     }
   }
 
@@ -50,5 +57,5 @@ export const useAgentsStore = defineStore('agents', () => {
     }
   }
 
-  return { agents, loadAgents, createAgent, updateAgent, deleteAgent }
+  return { agents, loading, error, loadAgents, createAgent, updateAgent, deleteAgent }
 })

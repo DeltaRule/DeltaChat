@@ -119,10 +119,10 @@ class ChromaVectorStore extends VectorStoreBase {
     return { ok: true }
   }
 
-  async useCollection(name: string): Promise<ChromaCollectionInstance> {
+  async useCollection(name: string): Promise<void> {
     this.collectionName = name
     this._collection = null
-    return this._getCollection()
+    await this._getCollection()
   }
 }
 

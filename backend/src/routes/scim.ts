@@ -7,7 +7,7 @@
  */
 
 import { Router, Request, Response, NextFunction } from 'express'
-import { randomUUID } from 'crypto'
+import { randomUUID, timingSafeEqual } from 'crypto'
 import config from '../config'
 import { getAdapter } from '../db/DeltaDatabaseAdapter'
 
@@ -24,7 +24,23 @@ function scimAuth(req: Request, res: Response, next: NextFunction): void {
     return
   }
   const header = req.headers.authorization
-  if (!header?.startsWith('Bearer ') || header.slice(7) !== config.scim.apiToken) {
+  if (!header?.startsWith('Bearer ')) {
+    res.status(401).json({
+      schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
+      detail: 'Invalid SCIM bearer token',
+      status: '401',
+    })
+    return
+  }
+  const provided = header.slice(7)
+  const expected = config.scim.apiToken
+  let tokenMatch = false
+  try {
+    tokenMatch = timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
+  } catch {
+    // buffers differ in length — not equal
+  }
+  if (!tokenMatch) {
     res.status(401).json({
       schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
       detail: 'Invalid SCIM bearer token',
@@ -171,6 +187,14 @@ router.patch('/Groups/:id', async (req: Request, res: Response, next: NextFuncti
 router.delete('/Groups/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getAdapter()
+    const group = await db.getUserGroup(req.params.id as string)
+    if (!group) {
+      return res.status(404).json({
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
+        detail: 'Group not found',
+        status: '404',
+      })
+    }
     await db.deleteResourceSharesByTarget('group', req.params.id as string)
     await db.deleteUserGroup(req.params.id as string)
     res.status(204).send()

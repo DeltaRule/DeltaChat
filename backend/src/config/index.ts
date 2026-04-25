@@ -101,7 +101,8 @@ const config = {
   webhookSecret: process.env['WEBHOOK_SECRET'] ?? 'change-me-in-production',
   jwt: {
     secret: process.env['JWT_SECRET'] ?? 'deltachat-dev-secret-change-in-production',
-    expiresIn: process.env['JWT_EXPIRES_IN'] ?? '7d',
+    expiresIn: process.env['JWT_EXPIRES_IN'] ?? '15m',
+    refreshExpiresIn: process.env['JWT_REFRESH_EXPIRES_IN'] ?? '7d',
   },
   google: {
     clientId: process.env['GOOGLE_CLIENT_ID'] ?? '',
@@ -123,5 +124,25 @@ const config = {
       .map((o) => o.trim()),
   },
 } as const
+
+// ── Startup validation ─────────────────────────────────────────────────────────
+// Throw early in production so the problem is obvious, not buried at request time.
+if (config.nodeEnv === 'production') {
+  const KNOWN_DEFAULT_JWT = 'deltachat-dev-secret-change-in-production'
+  const KNOWN_DEFAULT_WEBHOOK = 'change-me-in-production'
+
+  if (!process.env['JWT_SECRET'] || config.jwt.secret === KNOWN_DEFAULT_JWT) {
+    throw new Error(
+      '[Config] JWT_SECRET must be set to a strong random value in production. ' +
+        "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+    )
+  }
+  if (!process.env['WEBHOOK_SECRET'] || config.webhookSecret === KNOWN_DEFAULT_WEBHOOK) {
+    throw new Error(
+      '[Config] WEBHOOK_SECRET must be set in production. ' +
+        "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
+    )
+  }
+}
 
 export default config

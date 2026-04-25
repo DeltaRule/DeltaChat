@@ -26,6 +26,13 @@ router.post('/proxy', async (req: Request, res: Response, next: NextFunction) =>
       return res.status(403).json({ error: 'Access denied to this MCP connection' })
     }
 
+    // Client-scope connections are called browser-side — the backend cannot proxy them
+    if (conn['connectionScope'] === 'client') {
+      return res.status(400).json({
+        error: 'Client-scope MCP connections cannot be proxied via the backend.',
+      })
+    }
+
     const serverUrl = conn['serverUrl'] as string
     const timeout = (conn['timeout'] as number) || 30000
 
@@ -38,10 +45,32 @@ router.post('/proxy', async (req: Request, res: Response, next: NextFunction) =>
 
     const response = await axios.post(serverUrl, rpcRequest, {
       timeout,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      responseType: 'text',
+      transformResponse: [(data: string) => data],
     })
 
-    res.json(response.data)
+    // The MCP SDK may respond with SSE (text/event-stream) or plain JSON
+    const ct = response.headers['content-type'] || ''
+    let parsed: unknown
+    try {
+      if (ct.includes('text/event-stream')) {
+        const dataLine = String(response.data)
+          .split('\n')
+          .find((l: string) => l.startsWith('data: '))
+        parsed = dataLine ? JSON.parse(dataLine.slice(6)) : { result: null }
+      } else {
+        const text = String(response.data).trim()
+        parsed = text ? JSON.parse(text) : { result: null }
+      }
+    } catch {
+      parsed = { result: null }
+    }
+
+    res.json(parsed)
   } catch (err) {
     next(err)
   }

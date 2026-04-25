@@ -16,25 +16,17 @@ export interface DeleteResult {
 }
 
 abstract class BinaryStorageBase {
-  async store(
-    _id: string,
-    _buffer: Buffer,
-    _metadata: Record<string, unknown>,
-  ): Promise<StoreResult> {
-    throw new Error(`${this.constructor.name} must implement store(id, buffer, metadata)`)
-  }
+  abstract store(
+    id: string,
+    buffer: Buffer,
+    metadata: Record<string, unknown>,
+  ): Promise<StoreResult>
 
-  async retrieve(_id: string): Promise<RetrieveResult> {
-    throw new Error(`${this.constructor.name} must implement retrieve(id)`)
-  }
+  abstract retrieve(id: string): Promise<RetrieveResult>
 
-  async delete(_id: string): Promise<DeleteResult> {
-    throw new Error(`${this.constructor.name} must implement delete(id)`)
-  }
+  abstract delete(id: string): Promise<DeleteResult>
 
-  async list(): Promise<StoreResult[]> {
-    throw new Error(`${this.constructor.name} must implement list()`)
-  }
+  abstract list(): Promise<StoreResult[]>
 }
 
 export default BinaryStorageBase

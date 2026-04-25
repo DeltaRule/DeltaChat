@@ -7,13 +7,20 @@ import { getErrorMessage } from '../types'
 
 export const useModelsStore = defineStore('models', () => {
   const aiModels = ref<AiModel[]>([])
+  const loading = ref(false)
+  const error = ref<string | null>(null)
 
   async function loadModels(): Promise<void> {
+    loading.value = true
+    error.value = null
     try {
       const { data } = await api.get<AiModel[]>('/models')
       aiModels.value = data
     } catch (e: unknown) {
-      useNotificationStore().error(getErrorMessage(e, 'Failed to load models'))
+      error.value = getErrorMessage(e, 'Failed to load models')
+      useNotificationStore().error(error.value)
+    } finally {
+      loading.value = false
     }
   }
 
@@ -50,5 +57,5 @@ export const useModelsStore = defineStore('models', () => {
     }
   }
 
-  return { aiModels, loadModels, createModel, updateModel, deleteModel }
+  return { aiModels, loading, error, loadModels, createModel, updateModel, deleteModel }
 })

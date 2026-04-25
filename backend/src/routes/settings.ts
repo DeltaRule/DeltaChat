@@ -7,8 +7,8 @@ import { requireAdmin } from '../middleware/auth'
 
 const router = Router()
 
-// GET /api/settings
-router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
+// GET /api/settings — admin only (contains provider API keys)
+router.get('/', requireAdmin, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const db = getAdapter()
     const settings = await db.getSettings()

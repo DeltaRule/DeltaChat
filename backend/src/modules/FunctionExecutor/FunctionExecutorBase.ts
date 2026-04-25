@@ -22,14 +22,13 @@ export interface FunctionDef {
   }
 }
 
-abstract class FunctionExecutorBase {
-  async execute(_functionName: string, _args: Record<string, unknown>): Promise<unknown> {
-    throw new Error(`${this.constructor.name} must implement execute(functionName, args)`)
-  }
+export interface CommonExecutorConfig {
+  timeout?: number
+  maxOutputBytes?: number
+}
 
-  register(_functionDef: FunctionDef): void {
-    throw new Error(`${this.constructor.name} must implement register(functionDef)`)
-  }
+abstract class FunctionExecutorBase {
+  abstract execute(code: string, args: Record<string, unknown>): Promise<unknown>
 }
 
 export default FunctionExecutorBase

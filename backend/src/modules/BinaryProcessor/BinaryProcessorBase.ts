@@ -6,9 +6,7 @@ export interface ProcessResult {
 }
 
 abstract class BinaryProcessorBase {
-  async process(_buffer: Buffer, _mimeType: string): Promise<ProcessResult> {
-    throw new Error(`${this.constructor.name} must implement process(buffer, mimeType)`)
-  }
+  abstract process(buffer: Buffer, mimeType: string): Promise<ProcessResult>
 }
 
 export default BinaryProcessorBase

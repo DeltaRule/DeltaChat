@@ -11,6 +11,7 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
     fields: {
       id: 'string',
       title: 'string',
+      /** @deprecated Use modelId (UUID ref to ai_models). Kept for backwards-compat. */
       model: 'string|null',
       modelId: 'string|null',
       folder: 'string|null',
@@ -34,6 +35,7 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
       model: 'string|null',
       usage: 'object|null',
       sources: 'Array<object>|null',
+      toolCalls: 'Array<object>|null',
       createdAt: 'string (ISO 8601)',
       updatedAt: 'string (ISO 8601)',
     },
@@ -44,7 +46,6 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
       id: 'string',
       name: 'string',
       description: 'string',
-      embeddingModel: 'string|null',
       embeddingModelId: 'string|null',
       vectorStoreConfig: 'object|null',
       documentProcessorConfig: 'object|null',
@@ -84,6 +85,7 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
       headers: 'object',
       secret: 'string|null',
       enabled: 'boolean',
+      ownerId: 'string|null',
       createdAt: 'string (ISO 8601)',
       updatedAt: 'string (ISO 8601)',
     },
@@ -131,6 +133,16 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
   settings: {
     required: ['id'],
     fields: { id: '"global"' },
+  },
+  refresh_tokens: {
+    required: ['id', 'userId', 'expiresAt'],
+    fields: {
+      id: 'string',
+      userId: 'string',
+      expiresAt: 'number',
+      revokedAt: 'number|null',
+      createdAt: 'string (ISO 8601)',
+    },
   },
   ai_models: {
     required: ['id', 'name'],
@@ -195,6 +207,12 @@ export const SCHEMAS: Record<string, SchemaDefinition> = {
       name: 'string',
       serverUrl: 'string',
       timeout: 'number|null',
+      /** 'server' = backend proxies calls | 'client' = browser calls localhost directly */
+      connectionScope: '"server"|"client"',
+      /** 'http' = Streamable HTTP POST | 'sse' = MCP SSE transport (server-scope only) */
+      transportType: '"http"|"sse"',
+      /** Optional Bearer token sent to the MCP server */
+      apiKey: 'string|null',
       ownerId: 'string|null',
       createdAt: 'string (ISO 8601)',
       updatedAt: 'string (ISO 8601)',

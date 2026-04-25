@@ -1,17 +1,11 @@
 'use strict'
 
 abstract class EmbeddingProviderBase {
-  async embed(_text: string): Promise<number[]> {
-    throw new Error(`${this.constructor.name} must implement embed(text)`)
-  }
+  abstract embed(text: string): Promise<number[]>
 
-  async embedBatch(_texts: string[]): Promise<number[][]> {
-    throw new Error(`${this.constructor.name} must implement embedBatch(texts)`)
-  }
+  abstract embedBatch(texts: string[]): Promise<number[][]>
 
-  getDimensions(): number {
-    throw new Error(`${this.constructor.name} must implement getDimensions()`)
-  }
+  abstract getDimensions(): number
 }
 
 export default EmbeddingProviderBase

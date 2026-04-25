@@ -6,6 +6,23 @@ import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
+/** Milliseconds the refresh cookie stays valid (matches the DB TTL). */
+const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000
+
+function setRefreshCookie(res: Response, token: string): void {
+  res.cookie('refreshToken', token, {
+    httpOnly: true,
+    secure: process.env['NODE_ENV'] === 'production',
+    sameSite: 'strict',
+    maxAge: REFRESH_COOKIE_MAX_AGE,
+    path: '/api/auth',
+  })
+}
+
+function clearRefreshCookie(res: Response): void {
+  res.clearCookie('refreshToken', { path: '/api/auth' })
+}
+
 // POST /api/auth/register
 router.post('/register', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -18,7 +35,8 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     }
     const authService = getAuthService()
     const result = await authService.register(email, password, name)
-    res.status(201).json(result)
+    setRefreshCookie(res, result.refreshToken)
+    res.status(201).json({ accessToken: result.accessToken, user: result.user })
   } catch (err) {
     next(err)
   }
@@ -33,7 +51,8 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     }
     const authService = getAuthService()
     const result = await authService.login(email, password)
-    res.json(result)
+    setRefreshCookie(res, result.refreshToken)
+    res.json({ accessToken: result.accessToken, user: result.user })
   } catch (err) {
     next(err)
   }
@@ -48,7 +67,39 @@ router.post('/google', async (req: Request, res: Response, next: NextFunction) =
     }
     const authService = getAuthService()
     const result = await authService.googleAuth(idToken)
-    res.json(result)
+    setRefreshCookie(res, result.refreshToken)
+    res.json({ accessToken: result.accessToken, user: result.user })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /api/auth/refresh — reads the HttpOnly cookie, issues a new access token
+router.post('/refresh', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const incomingToken = req.cookies?.['refreshToken'] as string | undefined
+    if (!incomingToken) {
+      return res.status(401).json({ error: 'No refresh token provided' })
+    }
+    const authService = getAuthService()
+    const result = await authService.validateAndRotateRefreshToken(incomingToken)
+    setRefreshCookie(res, result.refreshToken)
+    res.json({ accessToken: result.accessToken, user: authService._sanitizeUser(result.user) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /api/auth/logout — revoke the refresh token and clear the cookie
+router.post('/logout', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const incomingToken = req.cookies?.['refreshToken'] as string | undefined
+    if (incomingToken) {
+      const authService = getAuthService()
+      await authService.revokeRefreshToken(incomingToken)
+    }
+    clearRefreshCookie(res)
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }

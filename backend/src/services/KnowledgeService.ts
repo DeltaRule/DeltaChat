@@ -6,11 +6,13 @@ import type EmbeddingProviderBase from '../modules/EmbeddingProvider/EmbeddingPr
 import type VectorStoreBase from '../modules/VectorStore/VectorStoreBase'
 import type BinaryProcessorBase from '../modules/BinaryProcessor/BinaryProcessorBase'
 import type BinaryStorageBase from '../modules/BinaryStorage/BinaryStorageBase'
+import { createEmbeddingFromModel } from '../modules/EmbeddingProvider/EmbeddingProviderFactory'
 import { createVectorStore, VectorStoreConfig } from '../modules/VectorStore/VectorStoreFactory'
 import {
   createBinaryProcessor,
   BinaryProcessorConfig,
 } from '../modules/BinaryProcessor/BinaryProcessorFactory'
+
 import logger from '../logger'
 
 interface AppError extends Error {
@@ -72,50 +74,8 @@ function chunkText(text: string, maxLen = 1000, overlap = 100): string[] {
 
 /**
  * Resolve an EmbeddingProvider from an ai_model entity of type "embedding".
+ * Delegated to EmbeddingProviderFactory (extracted from this file).
  */
-function createEmbeddingFromModel(model: Entity): EmbeddingProviderBase {
-  const provider = model['provider'] as string | null
-  const providerModel = model['providerModel'] as string | null
-
-  switch (provider) {
-    case 'openai': {
-      const OpenAIEmbedding = require('../modules/EmbeddingProvider/OpenAIEmbedding')
-        .default as new (opts: { model?: string }) => EmbeddingProviderBase
-      return new OpenAIEmbedding({ model: providerModel ?? undefined })
-    }
-    case 'gemini': {
-      const GeminiEmbedding = require('../modules/EmbeddingProvider/GeminiEmbedding')
-        .default as new (opts: { model?: string }) => EmbeddingProviderBase
-      return new GeminiEmbedding({ model: providerModel ?? undefined })
-    }
-    case 'cohere': {
-      const CohereEmbedding = require('../modules/EmbeddingProvider/CohereEmbedding')
-        .default as new (opts: { model?: string }) => EmbeddingProviderBase
-      return new CohereEmbedding({ model: providerModel ?? undefined })
-    }
-    case 'azure': {
-      const AzureOpenAIEmbedding = require('../modules/EmbeddingProvider/AzureOpenAIEmbedding')
-        .default as new (opts: { model?: string }) => EmbeddingProviderBase
-      return new AzureOpenAIEmbedding({ model: providerModel ?? undefined })
-    }
-    case 'mistral': {
-      const MistralEmbedding = require('../modules/EmbeddingProvider/MistralEmbedding')
-        .default as new (opts: { model?: string }) => EmbeddingProviderBase
-      return new MistralEmbedding({ model: providerModel ?? undefined })
-    }
-    case 'huggingface': {
-      const HuggingFaceEmbedding = require('../modules/EmbeddingProvider/HuggingFaceEmbedding')
-        .default as new (opts: { model?: string }) => EmbeddingProviderBase
-      return new HuggingFaceEmbedding({ model: providerModel ?? undefined })
-    }
-    case 'ollama':
-    default: {
-      const OllamaEmbedding = require('../modules/EmbeddingProvider/OllamaEmbedding')
-        .default as new (opts: { model?: string }) => EmbeddingProviderBase
-      return new OllamaEmbedding({ model: providerModel ?? undefined })
-    }
-  }
-}
 
 class KnowledgeService {
   private _db: DeltaDatabaseAdapter
@@ -177,7 +137,7 @@ class KnowledgeService {
       id: randomUUID(),
       name: (data['name'] as string | undefined) ?? 'Unnamed Store',
       description: (data['description'] as string | undefined) ?? '',
-      embeddingModel: (data['embeddingModel'] as string | null | undefined) ?? null,
+      ownerId: (data['ownerId'] as string | null | undefined) ?? null,
       embeddingModelId: (data['embeddingModelId'] as string | null | undefined) ?? null,
       vectorStoreConfig:
         (data['vectorStoreConfig'] as Record<string, unknown> | null | undefined) ?? null,
@@ -211,6 +171,17 @@ class KnowledgeService {
       throw err
     }
     return ks
+  }
+
+  async updateKnowledgeStore(id: string, fields: Record<string, unknown>): Promise<Entity> {
+    await this.getKnowledgeStore(id) // throws 404 if not found
+    const updated = await this._db.updateKnowledgeStore(id, fields)
+    if (!updated) {
+      const err: AppError = new Error(`Knowledge store not found: ${id}`)
+      err.status = 404
+      throw err
+    }
+    return updated
   }
 
   async deleteKnowledgeStore(id: string): Promise<unknown> {

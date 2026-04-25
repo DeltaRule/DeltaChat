@@ -6,10 +6,13 @@ import express, { Request, Response, NextFunction } from 'express'
 import helmet from 'helmet'
 import cors from 'cors'
 import morgan from 'morgan'
+import cookieParser from 'cookie-parser'
+import rateLimit from 'express-rate-limit'
 import config from './config'
 import logger from './logger'
 import apiRouter from './routes'
 import scimRouter from './routes/scim'
+import { getAdapter } from './db/DeltaDatabaseAdapter'
 
 interface AppError extends Error {
   status?: number
@@ -36,15 +39,35 @@ if (config.nodeEnv !== 'test') {
   app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'))
 }
 
+app.use(cookieParser())
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+
+// ── Rate limiting (auth endpoints) ────────────────────────────────────────
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+})
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many registration attempts, please try again later.' },
+})
+
+app.use('/api/auth/login', loginLimiter)
+app.use('/api/auth/register', registerLimiter)
+app.use('/api/auth/google', loginLimiter)
 
 // ── Health check ───────────────────────────────────────────────────────────
 
 app.get('/health', (_req: Request, res: Response) => {
-  const { getAdapter } = require('./db/DeltaDatabaseAdapter') as {
-    getAdapter: () => { mode: string }
-  }
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),

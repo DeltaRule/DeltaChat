@@ -1,22 +1,37 @@
 'use strict'
 
+import { randomUUID } from 'crypto'
 import * as Ajv from 'ajv'
-import {
-  PythonExecutor,
-  type PythonExecutorConfig,
-} from '../modules/FunctionExecutor/PythonExecutor'
-import {
-  TypeScriptExecutor,
-  type TypeScriptExecutorConfig,
-} from '../modules/FunctionExecutor/TypeScriptExecutor'
+import type { Socket } from 'socket.io'
+import type PythonExecutorBase from '../modules/FunctionExecutor/python/PythonExecutorBase'
+import { type PythonExecutorConfig } from '../modules/FunctionExecutor/python/PythonExecutorBase'
+import PythonSpawnExecutor from '../modules/FunctionExecutor/python/PythonSpawnExecutor'
+import PythonSandboxExecutor from '../modules/FunctionExecutor/python/PythonSandboxExecutor'
+import type TypeScriptExecutorBase from '../modules/FunctionExecutor/typescript/TypeScriptExecutorBase'
+import { type TypeScriptExecutorConfig } from '../modules/FunctionExecutor/typescript/TypeScriptExecutorBase'
+import TypeScriptSpawnExecutor from '../modules/FunctionExecutor/typescript/TypeScriptSpawnExecutor'
+import TypeScriptSandboxExecutor from '../modules/FunctionExecutor/typescript/TypeScriptSandboxExecutor'
 import type McpService from './McpService'
 import { getAdapter } from '../db/DeltaDatabaseAdapter'
 
 const ajv = new Ajv.default()
 
+/** Maximum time (ms) to wait for a client-side relay response before giving up */
+const CLIENT_RELAY_TIMEOUT_MS = 60_000
+/** Interval (ms) at which keep-alive pings are sent to the client during a relay call */
+const CLIENT_RELAY_PING_INTERVAL_MS = 5_000
+
+export interface PythonExecutorSettings extends PythonExecutorConfig {
+  mode?: 'spawn' | 'sandbox'
+}
+
+export interface TypeScriptExecutorSettings extends TypeScriptExecutorConfig {
+  mode?: 'spawn' | 'sandbox'
+}
+
 export interface ExecutorSettings {
-  python?: PythonExecutorConfig
-  typescript?: TypeScriptExecutorConfig
+  python?: PythonExecutorSettings
+  typescript?: TypeScriptExecutorSettings
 }
 
 export interface ToolEntity {
@@ -32,7 +47,9 @@ export interface ToolEntity {
  * ToolExecutionService - Unified service for executing all tool types
  *
  * Routes tool execution to appropriate executor/handler based on tool type:
- * - MCP: delegates to McpService
+ * - MCP (server-scope): delegates to McpService (HTTP or SSE transport)
+ * - MCP (client-scope): relays via Socket.IO — emits mcp:relay:call, waits for
+ *   mcp:relay:response / mcp:relay:error from the connected browser
  * - Python: uses PythonExecutor with inline code
  * - TypeScript: uses TypeScriptExecutor with inline code
  *
@@ -41,12 +58,20 @@ export interface ToolEntity {
 export class ToolExecutionService {
   private _mcpService: McpService
   private _executorSettings: ExecutorSettings
-  private _pythonExecutor?: PythonExecutor
-  private _typeScriptExecutor?: TypeScriptExecutor
+  private _pythonExecutor?: PythonExecutorBase
+  private _typeScriptExecutor?: TypeScriptExecutorBase
+  /** Socket.IO socket for the active client connection (set per-request in server.ts) */
+  private _socket?: Socket
 
-  constructor(mcpService: McpService, executorSettings: ExecutorSettings = {}) {
+  constructor(mcpService: McpService, executorSettings: ExecutorSettings = {}, socket?: Socket) {
     this._mcpService = mcpService
     this._executorSettings = executorSettings
+    this._socket = socket
+  }
+
+  /** Replace the active socket — called when re-using a service instance across requests */
+  setSocket(socket: Socket | undefined): void {
+    this._socket = socket
   }
 
   /**
@@ -82,7 +107,7 @@ export class ToolExecutionService {
       throw new Error('MCP tool requires a toolName in config or tool name')
     }
 
-    // If a connectionId is specified, look up the MCP server URL from DB
+    // If a connectionId is specified, look up the MCP server from DB
     const connectionId = typeof config['connectionId'] === 'string' ? config['connectionId'] : null
 
     try {
@@ -92,9 +117,35 @@ export class ToolExecutionService {
         if (!conn) {
           throw new Error(`MCP connection "${connectionId}" not found`)
         }
+
+        const scope = (conn['connectionScope'] as string) ?? 'server'
         const serverUrl = conn['serverUrl'] as string
         const timeout = (conn['timeout'] as number) || 30000
-        return await this._mcpService.callToolWithUrl(serverUrl, timeout, toolName, args)
+        const transportType = (conn['transportType'] as 'http' | 'sse') ?? 'http'
+        const apiKey =
+          typeof conn['apiKey'] === 'string' && conn['apiKey'] ? conn['apiKey'] : undefined
+
+        if (scope === 'client') {
+          // Client-scope: browser must relay the call to its localhost MCP server
+          return await this._executeClientRelay(
+            connectionId,
+            serverUrl,
+            toolName,
+            args,
+            timeout,
+            apiKey,
+          )
+        }
+
+        // Server-scope: backend calls the MCP server directly
+        return await this._mcpService.callToolWithUrl(
+          serverUrl,
+          timeout,
+          toolName,
+          args,
+          transportType,
+          apiKey,
+        )
       }
 
       // Fallback to default MCP server (env var)
@@ -104,6 +155,88 @@ export class ToolExecutionService {
       const err = error as Error
       throw new Error(`MCP tool execution failed: ${err.message}`, { cause: error })
     }
+  }
+
+  /**
+   * Execute a client-scope MCP tool by relaying the call through the active Socket.IO connection.
+   *
+   * The backend emits `mcp:relay:call` with a unique relayId.  The connected browser
+   * receives the event, calls the localhost MCP server directly, and emits back
+   * either `mcp:relay:response` (success) or `mcp:relay:error` (failure).
+   *
+   * While waiting, keep-alive pings (`mcp:relay:ping`) are sent every
+   * CLIENT_RELAY_PING_INTERVAL_MS so the frontend knows the call is still running.
+   * The overall timeout is CLIENT_RELAY_TIMEOUT_MS.
+   */
+  private _executeClientRelay(
+    connectionId: string,
+    serverUrl: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    timeout: number,
+    apiKey?: string,
+  ): Promise<unknown> {
+    if (!this._socket) {
+      throw new Error(
+        'Client-side MCP tool cannot be executed: no active WebSocket connection. ' +
+          'The user must be connected via the chat interface.',
+      )
+    }
+
+    const socket = this._socket
+    const relayId = randomUUID()
+
+    return new Promise((resolve, reject) => {
+      const effectiveTimeout = Math.min(timeout, CLIENT_RELAY_TIMEOUT_MS)
+
+      // Send keep-alive pings so the frontend knows we are still waiting
+      const pingInterval = setInterval(() => {
+        socket.emit(`mcp:relay:ping`, { relayId })
+      }, CLIENT_RELAY_PING_INTERVAL_MS)
+
+      const cleanup = () => {
+        clearInterval(pingInterval)
+        socket.off('mcp:relay:response', onResponse)
+        socket.off('mcp:relay:error', onError)
+      }
+
+      const timer = setTimeout(() => {
+        cleanup()
+        reject(
+          new Error(
+            `Client-side MCP tool "${toolName}" timed out after ${effectiveTimeout}ms — ` +
+              'the browser did not respond in time.',
+          ),
+        )
+      }, effectiveTimeout)
+
+      const onResponse = (data: { relayId: string; result: unknown }) => {
+        if (data.relayId !== relayId) return
+        clearTimeout(timer)
+        cleanup()
+        resolve(data.result)
+      }
+
+      const onError = (data: { relayId: string; error: string }) => {
+        if (data.relayId !== relayId) return
+        clearTimeout(timer)
+        cleanup()
+        reject(new Error(data.error ?? 'Client-side MCP relay error'))
+      }
+
+      socket.on('mcp:relay:response', onResponse)
+      socket.on('mcp:relay:error', onError)
+
+      // Emit the relay call to the browser
+      socket.emit('mcp:relay:call', {
+        relayId,
+        connectionId,
+        serverUrl,
+        toolName,
+        args,
+        apiKey: apiKey ?? null,
+      })
+    })
   }
 
   private async _executePython(tool: ToolEntity, args: Record<string, unknown>): Promise<unknown> {
@@ -119,9 +252,13 @@ export class ToolExecutionService {
       this._validateArgs(args, config['args_schema'])
     }
 
-    // Create or reuse Python executor
+    // Create or reuse Python executor (class selected by configured mode, default: sandbox)
     if (!this._pythonExecutor) {
-      this._pythonExecutor = new PythonExecutor(this._executorSettings.python)
+      const { mode: pythonMode, ...pythonConfig } = this._executorSettings.python ?? {}
+      this._pythonExecutor =
+        pythonMode === 'spawn'
+          ? new PythonSpawnExecutor(pythonConfig)
+          : new PythonSandboxExecutor(pythonConfig)
     }
 
     try {
@@ -149,9 +286,13 @@ export class ToolExecutionService {
       this._validateArgs(args, config['args_schema'])
     }
 
-    // Create or reuse TypeScript executor
+    // Create or reuse TypeScript executor (class selected by configured mode, default: sandbox)
     if (!this._typeScriptExecutor) {
-      this._typeScriptExecutor = new TypeScriptExecutor(this._executorSettings.typescript)
+      const { mode: tsMode, ...tsConfig } = this._executorSettings.typescript ?? {}
+      this._typeScriptExecutor =
+        tsMode === 'spawn'
+          ? new TypeScriptSpawnExecutor(tsConfig)
+          : new TypeScriptSandboxExecutor(tsConfig)
     }
 
     try {

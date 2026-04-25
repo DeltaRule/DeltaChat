@@ -64,13 +64,14 @@ export const useThemeStore = defineStore('theme', () => {
     } else {
       root.classList.remove('dark')
     }
+    const hsl = colors.value.primary
     const hex = colors.value.primaryHex
-    if (hex) {
-      root.style.setProperty('--primary', hex)
-      root.style.setProperty('--ring', hex)
-      root.style.setProperty('--sidebar-primary', hex)
-      root.style.setProperty('--sidebar-ring', hex)
-      root.style.setProperty('--chart-1', hex)
+    if (hsl) {
+      root.style.setProperty('--primary', `hsl(${hsl})`)
+      root.style.setProperty('--ring', `hsl(${hsl})`)
+      root.style.setProperty('--sidebar-primary', `hsl(${hsl})`)
+      root.style.setProperty('--sidebar-ring', `hsl(${hsl})`)
+      root.style.setProperty('--chart-1', `hsl(${hsl})`)
       const fg = getContrastForeground(hex)
       root.style.setProperty('--primary-foreground', fg)
       root.style.setProperty('--sidebar-primary-foreground', fg)

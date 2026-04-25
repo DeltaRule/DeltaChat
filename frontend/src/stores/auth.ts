@@ -4,47 +4,59 @@ import api from '../lib/api'
 import type { User, AuthResponse } from '../types'
 
 export const useAuthStore = defineStore('auth', () => {
+  // Access token lives in Pinia memory only — NOT in localStorage.
+  // This prevents XSS from easily exfiltrating the token.
   const user = ref<User | null>(null)
   const token = ref<string | null>(null)
 
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
-  function loadFromStorage(): void {
-    const savedToken = localStorage.getItem('deltachat-token')
-    const savedUser = localStorage.getItem('deltachat-user')
-    if (savedToken && savedUser) {
-      token.value = savedToken
-      try {
-        user.value = JSON.parse(savedUser)
-      } catch {
-        /* ignore */
-      }
-    }
+  function _setAuth(accessToken: string, u: User): void {
+    token.value = accessToken
+    user.value = u
+    // Persist user metadata (not the token) so the UI can restore user info on reload
+    localStorage.setItem('deltachat-user', JSON.stringify(u))
   }
 
-  function _persist(t: string, u: User): void {
-    token.value = t
-    user.value = u
-    localStorage.setItem('deltachat-token', t)
-    localStorage.setItem('deltachat-user', JSON.stringify(u))
+  function _clearAuth(): void {
+    token.value = null
+    user.value = null
+    localStorage.removeItem('deltachat-user')
+  }
+
+  /**
+   * Called on every page load. Exchanges the HttpOnly refresh cookie for a
+   * new access token without requiring the user to log in again.
+   */
+  async function refreshAccessToken(): Promise<boolean> {
+    try {
+      const { data } = await api.post<AuthResponse>('/auth/refresh')
+      token.value = data.accessToken
+      user.value = data.user
+      localStorage.setItem('deltachat-user', JSON.stringify(data.user))
+      return true
+    } catch {
+      _clearAuth()
+      return false
+    }
   }
 
   async function register(email: string, password: string, name: string): Promise<AuthResponse> {
     const { data } = await api.post<AuthResponse>('/auth/register', { email, password, name })
-    _persist(data.token, data.user)
+    _setAuth(data.accessToken, data.user)
     return data
   }
 
   async function login(email: string, password: string): Promise<AuthResponse> {
     const { data } = await api.post<AuthResponse>('/auth/login', { email, password })
-    _persist(data.token, data.user)
+    _setAuth(data.accessToken, data.user)
     return data
   }
 
   async function googleLogin(idToken: string): Promise<AuthResponse> {
     const { data } = await api.post<AuthResponse>('/auth/google', { idToken })
-    _persist(data.token, data.user)
+    _setAuth(data.accessToken, data.user)
     return data
   }
 
@@ -60,11 +72,29 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function logout(): void {
-    token.value = null
-    user.value = null
-    localStorage.removeItem('deltachat-token')
-    localStorage.removeItem('deltachat-user')
+  async function logout(): Promise<void> {
+    try {
+      await api.post('/auth/logout')
+    } catch {
+      // Ignore errors — always clear local state
+    } finally {
+      _clearAuth()
+    }
+  }
+
+  /**
+   * Restore user display info from localStorage on page load (before refreshAccessToken completes).
+   * The token itself is never read from storage.
+   */
+  function loadFromStorage(): void {
+    const savedUser = localStorage.getItem('deltachat-user')
+    if (savedUser) {
+      try {
+        user.value = JSON.parse(savedUser)
+      } catch {
+        /* ignore malformed data */
+      }
+    }
   }
 
   return {
@@ -73,6 +103,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     isAdmin,
     loadFromStorage,
+    refreshAccessToken,
     register,
     login,
     googleLogin,

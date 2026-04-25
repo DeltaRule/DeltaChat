@@ -7,13 +7,20 @@ import { getErrorMessage } from '../types'
 
 export const useToolsStore = defineStore('tools', () => {
   const tools = ref<Tool[]>([])
+  const loading = ref(false)
+  const error = ref<string | null>(null)
 
   async function loadTools(): Promise<void> {
+    loading.value = true
+    error.value = null
     try {
       const { data } = await api.get<Tool[]>('/tools')
       tools.value = data
     } catch (e: unknown) {
-      useNotificationStore().error(getErrorMessage(e, 'Failed to load tools'))
+      error.value = getErrorMessage(e, 'Failed to load tools')
+      useNotificationStore().error(error.value)
+    } finally {
+      loading.value = false
     }
   }
 
@@ -62,6 +69,8 @@ export const useToolsStore = defineStore('tools', () => {
 
   return {
     tools,
+    loading,
+    error,
     loadTools,
     createTool,
     updateTool,
